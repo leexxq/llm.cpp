@@ -59,7 +59,7 @@ FetchContent_MakeAvailable(fmt)
 
 file(GLOB_RECURSE GPT2_SOURCES "gpt2/*.cpp")
 
-add_library(libgpt2cpp STATIC ${GPT2_SOURCES} gpt2/global.h)
+add_library(libgpt2cpp STATIC ${GPT2_SOURCES} )
 
 
 target_link_libraries(libgpt2cpp PUBLIC Eigen3::Eigen PRIVATE fmt::fmt)

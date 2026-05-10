@@ -25,22 +25,22 @@ protected:
 };
 
 TEST_F(TestEncoder, forward) {
-	Mat input(2, 3);
+	Matf input(2, 3);
 	input << 0, 2, 3,
 			1, 3, 2;
 
-	Mat wte(4, 3);
+	Matf wte(4, 3);
 	wte << 1, 0, 0,
 			0, 1, 0,
 			0, 0, 1,
 			1, 1, 0;
 
-	Mat wpe(3, 3);
+	Matf wpe(3, 3);
 	wpe << -1, 0, 0,
 			0, -1, 0,
 			0, 0, -1;
 
-	VecBtc exp_res(2, Mat(3, 3));
+	VecBtc exp_res(2, Matf(3, 3));
 	exp_res[0] << 0, 0, 0,
 			0, -1, 1,
 			1, 1, -1;
@@ -52,6 +52,8 @@ TEST_F(TestEncoder, forward) {
 	encoder.wpe = std::move(wpe);
 	encoder.wte = std::move(wte);
 	VecBtc res = encoder.forward(input);
+
+	ASSERT_TRUE(res.size() == input.rows() && res.front().rows() == input.cols() && res.front().cols() == encoder.wpe.cols());
 	for (int i = 0; i < res.size(); ++i) {
 		// std::cout << res[i] << std::endl;
 		EXPECT_EQ(res[i], exp_res[i]);

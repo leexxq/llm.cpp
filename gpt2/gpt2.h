@@ -3,6 +3,7 @@
 #include "encoder.h"
 #include "global.h"
 #include "layernorm.h"
+#include "matmul.h"
 
 #include <Eigen/Dense>
 #include <cstddef>
@@ -95,12 +96,13 @@ private:
 	// other run state configuration
 	int batch_size; // the batch size (B) of current forward pass
 	int seq_len; // the sequence length (T) of current forward pass
-	Mat inputs; // the input tokens for the current forward pass
-	Mat targets; // the target tokens for the current forward pass
+	Matf inputs; // the input tokens for the current forward pass
+	Matf targets; // the target tokens for the current forward pass
 	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
 					 //
 	Encoder encoder_;
 	LayerNorm layernorm_;
+	MatMul matmul_;
 
 private:
 	void Init();
@@ -111,5 +113,5 @@ public:
 	GPT2(const std::filesystem::path &path);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
-	void forward(Mat &, Mat &);
+	void forward(Matf &, Matf &);
 };

@@ -8,9 +8,9 @@ VecBtc LayerNorm::forward(const VecBtc &inputs) {
 	size_t seq_len = inputs.front().rows();
 	size_t channels = inputs.front().cols();
 
-	VecBtc output(batchs, Mat(seq_len, channels));
+	VecBtc output(batchs, Matf(seq_len, channels));
 	for (int b = 0; b < batchs; ++b) {
-		const Mat &tc = inputs[b];
+		const Matf &tc = inputs[b];
 		for (int t = 0; t < seq_len; ++t) {
 			float mean_axis = tc.row(t).mean();
 			mean[b](t) = mean_axis;
@@ -26,3 +26,5 @@ VecBtc LayerNorm::forward(const VecBtc &inputs) {
 
 	return output;
 }
+
+void LayerNorm::backward(){}

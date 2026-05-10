@@ -57,8 +57,8 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 	}
 
 	buffer_.resize(B * T + 1);
-	inputs = Mat(B, T);
-	targets = Mat(B, T);
+	inputs = Matf(B, T);
+	targets = Matf(B, T);
 	num_tokens = ntok_total;
 	Reset();
 }

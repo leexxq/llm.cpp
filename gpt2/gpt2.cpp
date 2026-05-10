@@ -3,6 +3,7 @@
 #include "encoder.h"
 #include "fmt/core.h"
 #include "global.h"
+#include "matmul.h"
 
 #include <fmt/color.h>
 #include <fmt/core.h>
@@ -26,6 +27,7 @@ void GPT2::Init() {
 	config_.Print();
 	encoder_ = Encoder{ config_.vocab_size, config_.max_seq_len, config_.channels };
 	layernorm_ = LayerNorm{ config_.vocab_size, config_.max_seq_len, config_.channels };
+	matmul_ = MatMul{ config_.channels, 3 * config_.channels };
 }
 
 GPT2::GPT2(const std::filesystem::path &path) {
@@ -61,20 +63,24 @@ GPT2::GPT2(const std::filesystem::path &path) {
 	//...
 }
 
-void GPT2::forward(Mat &inputs, Mat &targets) {
-	VecBtc enc = encoder_.forward(inputs);
-	fmt::println("encoder forward sharp: ({} ,{} , {})", enc.size(), enc[1].rows(), enc[0].cols());
+void GPT2::forward(Matf &inputs, Matf &targets) {
+	VecBtc encoded = encoder_.forward(inputs);
+	fmt::println("encoder forward sharp: ({} ,{} , {})", encoded.size(), encoded[1].rows(), encoded[0].cols());
 
-	fmt::println("enc[0] : \n{}", fmt::streamed(enc[0].block<2, 2>(1, 1)));
+	fmt::println("enc[0] : \n{}", fmt::streamed(encoded[0].block<2, 2>(1, 1)));
 
 	// for (int l = 0; l < config_.num_layers; ++l) {
 	//
 
-	VecBtc ln_f = layernorm_.forward(enc);
-	fmt::println("layernorm forward sharp: ({} ,{} , {})", ln_f.size(), ln_f[0].rows(), ln_f[0].cols());
+	VecBtc l_ln1 = layernorm_.forward(encoded);
+	fmt::println("layernorm forward sharp: ({} ,{} , {})", l_ln1.size(), l_ln1[0].rows(), l_ln1[0].cols());
 
-	fmt::println("ln_f[0]: \n{}", fmt::streamed(ln_f[0].block<2, 2>(1, 1)));
+	fmt::println("l_ln1[0]: \n{}", fmt::streamed(l_ln1[0].block<2, 2>(1, 1)));
 
+	VecBtc l_qkv = matmul_.forward(encoded);
+	fmt::println("matmul forward sharp: ({} ,{} , {})", l_qkv.size(), l_qkv[0].rows(), l_qkv[0].cols());
+
+	fmt::println("l_qkv[0]: \n{}", fmt::streamed(l_qkv[0].block<2, 2>(1, 1)));
 	// }
 
 	// DEBUG_PRINT_F();
