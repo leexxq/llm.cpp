@@ -1,4 +1,4 @@
-#include "../../gpt2/encoder.h"
+#include <encoder.h>
 
 #include <gtest/gtest.h>
 
