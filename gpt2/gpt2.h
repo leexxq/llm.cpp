@@ -5,6 +5,7 @@
 #include "global.h"
 #include "layernorm.h"
 #include "matmul.h"
+#include "residual.h"
 
 #include <Eigen/Dense>
 #include <cstddef>
@@ -103,15 +104,19 @@ private:
 					 //
 	Encoder encoder_;
 	LayerNorm layernorm_;
-	MatMul matmul_;
+	MatMul qkv_;
 	Attention attention_;
+	MatMul att_proj_;
+	Residual residual1;
+	Residual residual2;
 
 private:
-	void Init(size_t B,size_t T);
+	void
+	Init(size_t B, size_t T);
 
 public:
-	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {  }
-	GPT2(GPT2Config config) : config_{ config } { }
+	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {}
+	GPT2(GPT2Config config) : config_{ config } {}
 	GPT2(const std::filesystem::path &path);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;

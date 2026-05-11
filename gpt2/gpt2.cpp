@@ -5,6 +5,7 @@
 #include "fmt/core.h"
 #include "global.h"
 #include "matmul.h"
+#include "residual.h"
 
 #include <fmt/color.h>
 #include <fmt/core.h>
@@ -30,8 +31,11 @@ void GPT2::Init(size_t B, size_t T) {
 	config_.Print();
 	encoder_ = Encoder{ config_.vocab_size, config_.max_seq_len, config_.channels };
 	layernorm_ = LayerNorm{ config_.vocab_size, T, config_.channels };
-	matmul_ = MatMul{ config_.channels, 3 * config_.channels };
+	qkv_ = MatMul{ config_.channels, 3 * config_.channels };
 	attention_ = Attention{ B, T, config_.channels, config_.num_heads };
+	att_proj_ = MatMul{ config_.channels, config_.channels };
+	residual1 = Residual{};
+	residual2 = Residual{};
 }
 
 GPT2::GPT2(const std::filesystem::path &path) {
@@ -69,30 +73,35 @@ GPT2::GPT2(const std::filesystem::path &path) {
 void GPT2::Forward(Matf &inputs, Matf &targets) {
 	Init(inputs.rows(), inputs.cols());
 
-
 	VecBTC encoded = encoder_.Forward(inputs);
 	fmt::println("encoder forward sharp: ({} ,{} , {})", encoded.size(), encoded[1].rows(), encoded[0].cols());
 	fmt::println("enc[0] : \n{}", fmt::streamed(encoded[0].block<2, 2>(1, 1)));
 
+	VecBTC &residual = encoded;
 	// for (int l = 0; l < config_.num_layers; ++l) {
 	//
-
 	VecBTC l_ln1 = layernorm_.Forward(encoded);
 	fmt::println("layernorm forward sharp: ({} , {} , {})", l_ln1.size(), l_ln1[0].rows(), l_ln1[0].cols());
 	fmt::println("l_ln1[0]: \n{}", fmt::streamed(l_ln1[0].block<2, 2>(1, 1)));
 
 	// 3C is GPT2's dim before qkv split
 	using VecBT3C = VecBTC;
-	VecBT3C l_qkv = matmul_.Forward(encoded);
-	fmt::println("matmul forward sharp: ({} , {} , {})", l_qkv.size(), l_qkv[0].rows(), l_qkv[0].cols());
+	VecBT3C l_qkv = qkv_.Forward(encoded);
+	fmt::println("qkv_ forward sharp: ({} , {} , {})", l_qkv.size(), l_qkv[0].rows(), l_qkv[0].cols());
 	fmt::println("l_qkv[0]: \n{}", fmt::streamed(l_qkv[0].block<2, 2>(1, 1)));
 
 	VecBTC l_atty = attention_.Forward(l_qkv);
 	fmt::println("attention forward sharp: ({} , {} , {})", l_atty.size(), l_atty[0].rows(), l_atty[0].cols());
-	fmt::println("l_atty[0]: \n{}", fmt::streamed(l_qkv[0].block<2, 2>(1, 1)));
-	fmt::println("att's shape is: ({} , {} , {} , {})",attention_.att.size(),attention_.att.front().size(),attention_.att.front().front().rows(),attention_.att.front().front().cols());
+	fmt::println("l_atty[0]: \n{}", fmt::streamed(l_atty[0].block<2, 2>(1, 1)));
+	fmt::println("att's shape is: ({} , {} , {} , {})", attention_.att.size(), attention_.att.front().size(), attention_.att.front().front().rows(), attention_.att.front().front().cols());
 
+	VecBTC l_attproj = att_proj_.Forward(l_atty);
+	fmt::println("att_proj forward sharp: ({} , {} , {})", l_attproj.size(), l_attproj[0].rows(), l_attproj[0].cols());
+	fmt::println("l_attproj[0]: \n{}", fmt::streamed(l_attproj[0].block<2, 2>(1, 1)));
 
+	VecBTC l_residual2 = residual1.Forward(residual, l_attproj);
+	fmt::println("l_residual2 forward sharp: ({} , {} , {})", l_residual2.size(), l_residual2[0].rows(), l_residual2[0].cols());
+	fmt::println("l_residual2[0]: \n{}", fmt::streamed(l_residual2[0].block<2, 2>(1, 1)));
 
 	// }
 }

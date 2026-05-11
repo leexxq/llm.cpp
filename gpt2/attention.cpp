@@ -36,7 +36,7 @@ VecBTC Attention::Forward(const VecBTC &inputs) {
 		const Matf &qQ = inputs[b].block(0, 0, seq_len, channels);
 		const Matf &kK = inputs[b].block(0, channels, seq_len, channels);
 		const Matf &vV = inputs[b].block(0, 2 * channels, seq_len, channels);
-		for (int h; h < num_heads; ++h) {
+		for (int h = 0; h < num_heads; ++h) {
 			const Matf &qq = qQ.block(0, h * q_dim, seq_len, q_dim);
 			const Matf &kk = kK.block(0, h * q_dim, seq_len, q_dim);
 			const Matf &vv = vV.block(0, h * q_dim, seq_len, q_dim);
