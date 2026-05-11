@@ -11,12 +11,12 @@ public:
 			beta(Vecf::Constant(C, 0)),
 			eps{ eps } {}
 
-	FORWARD_NO_DISCARD VecBtc forward(const VecBtc &inputs);
-	void backward();
+	FORWARD_NO_DISCARD VecBTC Forward(const VecBTC &inputs);
+	void Backward();
 
 	float eps;
-	VecBt mean;
-	VecBt rstd;
+	VecBT mean;
+	VecBT rstd;
 	Vecf gamma;
 	Vecf beta;
 };

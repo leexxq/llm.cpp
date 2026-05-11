@@ -30,7 +30,7 @@ int main() {
 
 	// for (int step = 0; step < 40; ++step) {
 	train_loader.NextBatch();
-	gpt2.forward(train_loader.inputs, train_loader.targets);
+	gpt2.Forward(train_loader.inputs, train_loader.targets);
 	// }
 
 	return 0;

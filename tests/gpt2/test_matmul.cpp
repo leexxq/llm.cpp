@@ -1,4 +1,4 @@
-#include "../../gpt2/matmul.h"
+#include <matmul.h>
 
 #include <gtest/gtest.h>
 
@@ -8,7 +8,7 @@ protected:
 };
 
 TEST_F(TestMatMul, forward) {
-	VecBtc input{
+	VecBTC input{
 
 		Matf{
 				{ -0.6913, 1.6103, 0.1138, 0.3595 },
@@ -33,7 +33,7 @@ TEST_F(TestMatMul, forward) {
 
 	matmul.bias << -1.3034, -0.2438, 0.8006, -1.0919, 1.3184;
 
-	VecBtc resexp{
+	VecBTC resexp{
 		Matf{
 				{ -1.3704, 3.6371, -0.1147, -1.5461, -0.2238 },
 				{ -0.0284, -2.4923, 0.0611, -0.6447, 0.8983 },
@@ -46,7 +46,7 @@ TEST_F(TestMatMul, forward) {
 		}
 	};
 
-	VecBtc res = matmul.forward(input);
+	VecBTC res = matmul.Forward(input);
 
 	ASSERT_TRUE(res.size() == input.size() && res.front().rows() == input.front().rows() && res.front().cols() == matmul.weight.cols());
 

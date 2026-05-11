@@ -14,6 +14,6 @@ public:
 	}
 
 	FORWARD_NO_DISCARD
-	VecBtc forward(const Matf &input) const;
-	void backward();
+	VecBTC Forward(const Matf &input) const;
+	void Backward();
 };

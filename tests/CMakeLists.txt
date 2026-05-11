@@ -22,7 +22,7 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-file(GLOB_RECURSE TEST_GPT2_SRC gpt2/*.cpp)
+aux_source_directory(gpt2/ TEST_GPT2_SRC)
 
 add_executable(
 	gtestexp
@@ -34,9 +34,12 @@ target_link_libraries(
 )
 
 add_executable(gpt2test ${TEST_GPT2_SRC})
+
+include_directories(../gpt2/)
+
 target_link_libraries(
 	gpt2test
-	PRIVATE libgpt2cpp
+	PRIVATE gpt2cpp
 	PRIVATE GTest::gtest_main
 	PRIVATE Eigen3::Eigen
 	PRIVATE CLI11::CLI11

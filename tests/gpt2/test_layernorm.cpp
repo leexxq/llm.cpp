@@ -1,4 +1,4 @@
-#include "../../gpt2/layernorm.h"
+#include <layernorm.h>
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@ protected:
 
 TEST_F(TestLayerNorm, forward1) {
 	layernorm = LayerNorm(2, 3, 4);
-	VecBtc input{
+	VecBTC input{
 		Matf{
 				{ 0.1262, 0.3419, -0.5983, -0.7482 },
 				{ 0.6616, -0.2417, 0.5725, -0.1024 },
@@ -20,7 +20,7 @@ TEST_F(TestLayerNorm, forward1) {
 				{ -0.8274, -1.5479, -0.6145, -0.7071 } }
 	};
 
-	VecBtc resexp{
+	VecBTC resexp{
 		Matf{
 				{ 0.7468, 1.2125, -0.8179, -1.1415 },
 				{ 1.1008, -1.1638, 0.8775, -0.8146 },
@@ -32,7 +32,7 @@ TEST_F(TestLayerNorm, forward1) {
 				{ 0.2633, -1.6952, 0.8418, 0.5901 } }
 	};
 
-	VecBtc res = layernorm.forward(input);
+	VecBTC res = layernorm.Forward(input);
 
 	ASSERT_TRUE(res.size() == input.size() && res.front().rows() == input.front().rows() && res.front().cols() == input.front().cols());
 	for (int i = 0; i < 2; ++i) {
@@ -42,7 +42,7 @@ TEST_F(TestLayerNorm, forward1) {
 
 TEST_F(TestLayerNorm, forward2) {
 	layernorm = LayerNorm(2, 3, 4);
-	VecBtc input{
+	VecBTC input{
 		Matf{
 				{ -0.3190, -0.8180, -1.9410, 0.6254 },
 				{ -0.6764, -0.7952, -0.6143, 0.4818 },
@@ -55,7 +55,7 @@ TEST_F(TestLayerNorm, forward2) {
 		}
 	};
 
-	VecBtc resexp{
+	VecBTC resexp{
 		Matf{
 				{ 0.3179, -0.2214, -1.4348, 1.3383 },
 				{ -0.5359, -0.7671, -0.4151, 1.7181 },
@@ -69,7 +69,7 @@ TEST_F(TestLayerNorm, forward2) {
 		}
 	};
 
-	VecBtc res = layernorm.forward(input);
+	VecBTC res = layernorm.Forward(input);
 
 	ASSERT_TRUE(res.size() == input.size() && res.front().rows() == input.front().rows() && res.front().cols() == input.front().cols());
 	for (int i = 0; i < 2; ++i) {

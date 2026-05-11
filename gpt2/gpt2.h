@@ -1,5 +1,6 @@
 #pragma once
 
+#include "attention.h"
 #include "encoder.h"
 #include "global.h"
 #include "layernorm.h"
@@ -94,8 +95,8 @@ private:
 	ActivationTensors grads_acts;
 	Eigen::VectorXd grads_acts_memory;
 	// other run state configuration
-	int batch_size; // the batch size (B) of current forward pass
-	int seq_len; // the sequence length (T) of current forward pass
+	size_t batch_size; // the batch size (B) of current forward pass
+	size_t seq_len; // the sequence length (T) of current forward pass
 	Matf inputs; // the input tokens for the current forward pass
 	Matf targets; // the target tokens for the current forward pass
 	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
@@ -103,15 +104,16 @@ private:
 	Encoder encoder_;
 	LayerNorm layernorm_;
 	MatMul matmul_;
+	Attention attention_;
 
 private:
-	void Init();
+	void Init(size_t B,size_t T);
 
 public:
-	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } { Init(); }
-	GPT2(GPT2Config config) : config_{ config } { Init(); }
+	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {  }
+	GPT2(GPT2Config config) : config_{ config } { }
 	GPT2(const std::filesystem::path &path);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
-	void forward(Matf &, Matf &);
+	void Forward(Matf &, Matf &);
 };

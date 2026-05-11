@@ -6,8 +6,8 @@ public:
 	MatMul() {}
 	MatMul(size_t C, size_t OC) : weight(C,OC), bias(OC) {}
 	FORWARD_NO_DISCARD
-	VecBtc forward(const VecBtc &);
-	void backward();
+	VecBTC Forward(const VecBTC &);
+	void Backward();
 
 public:
 	Matf weight;

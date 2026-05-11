@@ -57,12 +57,12 @@ FetchContent_MakeAvailable(fmt)
 
 #build libgpt2cpp
 
-file(GLOB_RECURSE GPT2_SOURCES "gpt2/*.cpp")
+aux_source_directory(gpt2/ GPT2_SOURCES)
 
-add_library(libgpt2cpp STATIC ${GPT2_SOURCES} )
+add_library(gpt2cpp SHARED ${GPT2_SOURCES} )
 
 
-target_link_libraries(libgpt2cpp PUBLIC Eigen3::Eigen PRIVATE fmt::fmt)
+target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PRIVATE fmt::fmt)
 
 
 
@@ -71,7 +71,7 @@ target_link_libraries(libgpt2cpp PUBLIC Eigen3::Eigen PRIVATE fmt::fmt)
 
 add_executable(traingpt2 train.cpp)
 
-target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE libgpt2cpp )
+target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp )
 
 add_custom_command(TARGET traingpt2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

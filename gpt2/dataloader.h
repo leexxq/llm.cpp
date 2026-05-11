@@ -6,12 +6,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <random>
 #include <vector>
 namespace fs = std::filesystem;
-using u16ptr = std::unique_ptr<uint16_t[]>;
-using iptr = std::unique_ptr<int[]>;
 
 class DataLoader {
 private:

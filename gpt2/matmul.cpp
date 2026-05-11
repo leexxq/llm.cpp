@@ -2,12 +2,12 @@
 
 #include "global.h"
 
-VecBtc MatMul::forward(const VecBtc &inputs) {
+VecBTC MatMul::Forward(const VecBTC &inputs) {
 	size_t batchs = inputs.size();
 	size_t seq_len = inputs.front().rows();
 	size_t channels = inputs.front().cols();
 	size_t oc = weight.cols();
-	VecBtc output(batchs, Matf(seq_len, oc));
+	VecBTC output(batchs, Matf(seq_len, oc));
 	for (int b = 0; b < batchs; ++b) {
 		const Matf &tc = inputs[b];
 		output[b] = tc * weight;
@@ -19,4 +19,4 @@ VecBtc MatMul::forward(const VecBtc &inputs) {
 	return output;
 }
 
-void MatMul::backward() {}
+void MatMul::Backward() {}
