@@ -1,6 +1,3 @@
-
-#include "global.h"
-
 #include <attention.h>
 #include <gtest/gtest.h>
 
@@ -10,16 +7,7 @@ protected:
 	Attention attention;
 };
 
-// TEST_F(TestAttention, Attention) {
-// }
-
-TEST_F(TestAttention, Forward) {
-}
-
-// TEST_F(TestAttention, QKScaledDot) {
-// }
-
-TEST_F(TestAttention, ScaledDotAttention) {
+TEST_F(TestAttention, forward1) {
 	attention = Attention{ 2, 3, 4, 2 };
 
 	VecBT3C input(2, Matf(3, 3 * 4)); // (2 , 3 , 3 * 4 )

@@ -93,7 +93,7 @@ void GPT2::Forward(Matf &inputs, Matf &targets) {
 	VecBTC l_atty = attention_.Forward(l_qkv);
 	fmt::println("attention forward sharp: ({} , {} , {})", l_atty.size(), l_atty[0].rows(), l_atty[0].cols());
 	fmt::println("l_atty[0]: \n{}", fmt::streamed(l_atty[0].block<2, 2>(1, 1)));
-	fmt::println("att's shape is: ({} , {} , {} , {})", attention_.att.size(), attention_.att.front().size(), attention_.att.front().front().rows(), attention_.att.front().front().cols());
+	fmt::println("-----att's shape is: ({} , {} , {} , {})", attention_.att.size(), attention_.att.front().size(), attention_.att.front().front().rows(), attention_.att.front().front().cols());
 
 	VecBTC l_attproj = att_proj_.Forward(l_atty);
 	fmt::println("att_proj forward sharp: ({} , {} , {})", l_attproj.size(), l_attproj[0].rows(), l_attproj[0].cols());
