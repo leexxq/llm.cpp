@@ -44,8 +44,8 @@ private:
 
 public:
 	size_t num_tokens; // total number of tokens
-	Matf inputs; // input tokens into transformer
-	Matf targets; // target tokens for the transformer
+	Mati inputs; // input tokens into transformer
+	Mati targets; // target tokens for the transformer
 
 private:
 	int64_t LoadShard(int shard_index);

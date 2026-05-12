@@ -1,16 +1,15 @@
 #pragma once
 
-#include "attention.h"
-#include "gelu.h"
 #include "encoder.h"
 #include "global.h"
+#include "layer.h"
 #include "layernorm.h"
-#include "matmul.h"
-#include "residual.h"
+#include "cross_entropy.h"
 
 #include <Eigen/Dense>
 #include <cstddef>
 #include <filesystem>
+#include <vector>
 
 struct GPT2Config {
 public:
@@ -23,7 +22,6 @@ public:
 					 //
 	void Print() const;
 };
-
 
 class GPT2 {
 private:
@@ -44,29 +42,17 @@ private:
 	// other run state configuration
 	// size_t batch_size; // the batch size (B) of current forward pass
 	// size_t seq_len; // the sequence length (T) of current forward pass
-	// Matf inputs; // the input tokens for the current forward pass
+	Matf inputs; // the input tokens for the current forward pass
 	// Matf targets; // the target tokens for the current forward pass
 	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
 					 //
 	Encoder encoder_;
 
-	LayerNorm layernorm1_;
-	LayerNorm layernorm2_;
 	LayerNorm layernormf_;
 
-	MatMul fch_;
-	MatMul fcproj_;
-	MatMul qkv_;
-	MatMul att_proj_;
-	MatMul mm_logits_;
+	CrossEntropy loss_;
 
-	GELU fch_gelu_;
-
-	Attention attention_;
-
-	Residual residual1_;
-	Residual residual2_;
-	Residual residual3_;
+	std::vector<Layer> layers_;
 
 private:
 	void
@@ -78,5 +64,5 @@ public:
 	GPT2(const std::filesystem::path &path);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
-	void Forward(Matf &, Matf &);
+	void Forward(Mati &, Mati &);
 };

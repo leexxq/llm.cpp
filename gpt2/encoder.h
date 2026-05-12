@@ -8,9 +8,9 @@ public:
 	Matf wte;
 	Matf wpe;
 	Encoder() {}
-	Encoder(size_t vp, size_t seq_len, size_t c) {
-		wte = Matf(vp, c);
-		wpe = Matf(seq_len, c);
+	Encoder(size_t Vp, size_t maxT, size_t C) {
+		wte = Matf(Vp, C);
+		wpe = Matf(maxT, C);
 	}
 
 	FORWARD_NO_DISCARD

@@ -1,7 +1,4 @@
 #include "encoder.h"
-
-#include <cassert>
-#include <cstddef>
 using Eigen::MatrixXf;
 
 VecBTC Encoder::Forward(const Matf &input) const{
