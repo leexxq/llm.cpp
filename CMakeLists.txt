@@ -5,8 +5,9 @@ project(llm.cpp)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "No build type selected, default to Debug")
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build." FORCE)
-
 endif()
+
+
 
 
 set(CMAKE_CXX_STANDARD 20)
@@ -62,7 +63,29 @@ aux_source_directory(gpt2/ GPT2_SOURCES)
 add_library(gpt2cpp SHARED ${GPT2_SOURCES} )
 
 
-target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PRIVATE fmt::fmt)
+target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
+
+target_compile_definitions(gpt2cpp PRIVATE
+    $<$<CONFIG:Debug>:DEBUG>
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	target_compile_options(gpt2cpp PUBLIC 
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Release>:-march=native>
+        $<$<CONFIG:Release>:-ffast-math>
+        $<$<CONFIG:Release>:-Wno-nan-infinity-disabled>
+    )
+
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+	target_compile_options(gpt2cpp PUBLIC
+        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:Release>:/arch:AVX2>
+        $<$<CONFIG:Release>:/fp:fast>
+        $<$<CONFIG:Release>:-Wno-nan-infinity-disabled>
+    )
+endif()
+
 
 
 
