@@ -26,6 +26,7 @@ aux_source_directory(gpt2/ TEST_GPT2_SRC)
 
 add_executable(
 	gtestexp
+	EXCLUDE_FROM_ALL
 	gtest_example.cpp
 )
 target_link_libraries(
@@ -33,7 +34,7 @@ target_link_libraries(
 	PRIVATE GTest::gtest_main
 )
 
-add_executable(gpt2test ${TEST_GPT2_SRC})
+add_executable(gpt2test EXCLUDE_FROM_ALL ${TEST_GPT2_SRC})
 
 include_directories(../gpt2/)
 
