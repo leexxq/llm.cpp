@@ -1,5 +1,7 @@
 #include "global.h"
 
+void CrossEntropySoftmaxBackward(VecBTC &d_logits, const VecBTC &probs, const Mati &targets); 
+
 class CrossEntropy {
 public:
 	using VecBTV = VecBTC;

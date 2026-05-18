@@ -1,11 +1,12 @@
 #pragma once
 
+#include "cross_entropy.h"
 #include "encoder.h"
 #include "global.h"
 #include "layer.h"
 #include "layernorm.h"
-#include "cross_entropy.h"
 
+#include <Eigen/Core>
 #include <Eigen/Dense>
 #include <cstddef>
 #include <filesystem>
@@ -42,8 +43,8 @@ private:
 	// other run state configuration
 	// size_t batch_size; // the batch size (B) of current forward pass
 	// size_t seq_len; // the sequence length (T) of current forward pass
-	Matf inputs; // the input tokens for the current forward pass
-	// Matf targets; // the target tokens for the current forward pass
+	Matf inputs_; // the input tokens for the current forward pass
+	Mati targets_; // the target tokens for the current forward pass
 	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
 					 //
 	Encoder encoder_;
@@ -54,15 +55,34 @@ private:
 
 	std::vector<Layer> layers_;
 
+	size_t B_;
+	size_t T_;
+
+	VecBTC encoded_;
+	VecLBTC residual_;
+	VecBTC lnf_;
+	VecBTVp logits_;
+	VecBTVp probs_;
+
+	VecBTVp d_logits_;
+	VecBTC d_lnf_;
+	VecLBTC d_residual3_;
+	VecBTC d_encoded;
+
+	std::filesystem::path checkpoint_path_;
+
 private:
-	void
-	Init(size_t B, size_t T);
+	bool _init = false;
+	void Init(size_t B, size_t T);
 
 public:
 	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {}
-	GPT2(GPT2Config config) : config_{ config } {}
-	GPT2(const std::filesystem::path &path);
+	GPT2(GPT2Config config,size_t B,size_t T) : config_{ config },B_(B),T_(T) {}
+	GPT2(const std::filesystem::path &path,size_t B,size_t T);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
 	void Forward(Mati &, Mati &);
+	void Backward();
+	void ZeroGrad();
+	void Update(float lr , float beta1,float beta2,float eps , float weight,int t);
 };

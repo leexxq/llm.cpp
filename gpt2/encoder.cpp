@@ -1,18 +1,31 @@
 #include "encoder.h"
-using Eigen::MatrixXf;
 
-VecBTC Encoder::Forward(const Matf &input) const{
+#include "global.h"
+
+VecBTC Encoder::Forward(const Matf &input) const {
 	size_t batchs = input.rows();
 	size_t seq_len = input.cols();
 	size_t channels = wte.cols();
-	VecBTC output = VecBTC(batchs);
+	VecBTC outputs = VecBTC(batchs);
 
 	for (int b = 0; b < batchs; ++b) {
-		output[b] = Matf(seq_len, channels);
+		outputs[b] = Matf(seq_len, channels);
 		for (int t = 0; t < seq_len; ++t) {
-			output[b].row(t) = wte.row(input(b, t)) + wpe.row(t);
+			outputs[b].row(t) = wte.row(input(b, t)) + wpe.row(t);
 		}
 	}
 
-	return output;
+	return outputs;
+}
+
+void Encoder::Backward(const VecBTC &d_outputs, const Matf &input) {
+	size_t batchs = input.rows();
+	size_t seq_len = input.cols();
+	size_t channels = wte.cols();
+	for (int b = 0; b < batchs; ++b) {
+		for (int t = 0; t < seq_len; ++t) {
+			d_wte.row(input(b, t)) += d_outputs[b].row(t);
+			d_wpe.row(t) += d_outputs[b].row(t);
+		}
+	}
 }

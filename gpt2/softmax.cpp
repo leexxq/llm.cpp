@@ -1,4 +1,20 @@
 #include "softmax.h"
+#include "global.h"
+
+
+void softmax(const Matf &mat,Matf& output) {
+	size_t cols = mat.cols();
+	size_t rows = mat.rows();
+	for (int r = 0; r < rows; ++r) {
+		float maxval = mat.row(r).maxCoeff();
+		output.row(r) = (mat.row(r).array() - maxval).exp();
+		float expsum = output.row(r).sum();
+		float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
+		output.row(r) *= expsum_inv;
+	}
+}
+
+
 Matf softmax(const Matf &mat) {
 	size_t cols = mat.cols();
 	size_t rows = mat.rows();

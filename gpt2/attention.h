@@ -9,13 +9,20 @@ private:
 	using THc = Matf;
 	using TT = Matf;
 	using VecBHTT = VecBHTC;
-	THc ScaledDotAttention(int b, int h ,const Matf &qq, const Matf &kk, const Matf &vv);
+	using VecBT3C = VecBTC;
+	THc CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv);
+	void CausalScaledDotAttentionBackward(VecBT3C& d_inputs ,const VecBTC &d_outputs, int b, int h, const Matf &qq, const Matf &kk, const Matf &vv);
+
 public:
 	Attention() {}
-	Attention(size_t B, size_t T, size_t C, size_t NH) : pre_att(B, VecHTC(NH, Matf(T, T))), att(B, VecHTC(NH, Matf(T, C))) {}
+	Attention(size_t B, size_t T, size_t C, size_t NH) :
+			pre_att(makeVecBHTC(B, NH, T, C)),
+			att(makeVecBHTC(B, NH, T, T))
+			 {
+	}
 
 	VecBTC Forward(const VecBTC &inputs);
-	void Backward();
+	VecBTC Backward(const VecBTC &d_outputs, const VecBTC &inputs);
 
 	VecBHTT pre_att;
 	VecBHTC att;
