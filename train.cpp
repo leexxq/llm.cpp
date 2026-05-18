@@ -2,6 +2,7 @@
 #include "gpt2/gpt2.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <vector>
@@ -15,9 +16,9 @@ int main() {
 	fs::path train_tokens = exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
 	fs::path val_tokens = exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
 	fs::path checkpoint_path{ "data/gpt2_124M.bin" };
-	GPT2 gpt2{ checkpoint_path };
 	size_t B = 4;
 	size_t T = 64;
+	GPT2 gpt2{checkpoint_path,B,T};
 	DataLoader train_loader{ train_tokens, B, T, 0, 1, true };
 	DataLoader val_loader{ val_tokens, B, T, 0, 1, false };
 	std::cout << "train dataset num_batches: " << train_loader.num_tokens / (B * T) << std::endl;
@@ -28,10 +29,14 @@ int main() {
 	std::vector<int> gen_tokens(B * T);
 	constexpr int genT = 64;
 
-	// for (int step = 0; step < 40; ++step) {
-	train_loader.NextBatch();
-	gpt2.Forward(train_loader.inputs, train_loader.targets);
-	// }
+	srand(42);
+	for (int step = 0; step < 1; ++step) {
+		train_loader.NextBatch();
+		gpt2.Forward(train_loader.inputs, train_loader.targets);
+		gpt2.ZeroGrad();
+		gpt2.Backward();
+		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
+	}
 
 	return 0;
 }

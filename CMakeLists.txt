@@ -9,10 +9,11 @@ endif()
 
 
 
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_CXX_SANITIZER "address")
 
 # Eigen3 install
 
@@ -60,7 +61,7 @@ FetchContent_MakeAvailable(fmt)
 
 aux_source_directory(gpt2/ GPT2_SOURCES)
 
-add_library(gpt2cpp SHARED ${GPT2_SOURCES} )
+add_library(gpt2cpp STATIC ${GPT2_SOURCES} )
 
 
 target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
