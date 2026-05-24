@@ -62,7 +62,6 @@ private:
 	VecLBTC residual_;
 	VecBTC lnf_;
 	VecBTVp logits_;
-	VecBTVp probs_;
 
 	VecBTVp d_logits_;
 	VecBTC d_lnf_;
@@ -72,6 +71,7 @@ private:
 	std::filesystem::path checkpoint_path_;
 
 public:
+	VecBTVp probs;
 	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
 
 private:
@@ -84,6 +84,10 @@ public:
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
 	void Forward(Mati &, Mati &);
+	void Forward(Mati &inputs) {
+		Mati targets;
+		Forward(inputs, targets);
+	}
 	void Backward();
 	void ZeroGrad();
 	void Update(float lr, float beta1, float beta2, float eps, float weight, int t);

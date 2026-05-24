@@ -16,17 +16,22 @@
 #ifdef DEBUG
 #define DEBUG_PRINTLN(...) \
 	do { \
-		fmt::print("[DEBUG]\t"); \
+		fmt::print(fg(fmt::color::yellow), "[DEBUG]\t"); \
 		fmt::println(__VA_ARGS__); \
-	} while (false);
+	} while (false)
 #endif
 #ifndef DEBUG
 #define DEBUG_PRINTLN(...)
 #endif
 
 #define INFO_PRINTLN(...) fmt::println(__VA_ARGS__)
+#define INFO_PRINT(...) fmt::print(__VA_ARGS__)
 
-#define ERROR_PRINTLN(...) fmt::println(stderr, __VA_ARGS__)
+#define ERROR_PRINTLN(...) \
+	do { \
+		fmt::print(stderr, fg(fmt::color::red), "[ERROR]\t"); \
+		fmt::println(stderr, __VA_ARGS__); \
+	} while (false)
 
 /**
  * BHTC is (batch, head,seq_len,channels) , (seq_len,channels) is matrix
@@ -51,7 +56,6 @@ using Veci = Eigen::VectorXi;
 using VecBTC = StdVec<Matf>;
 
 inline VecBTC makeVecBTC(size_t B, size_t T, size_t C) {
-
 	return VecBTC(B, Matf(T, C));
 }
 

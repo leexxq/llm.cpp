@@ -3,6 +3,8 @@
 #include "global.h"
 #include "rand.h"
 
+#include <fmt/ostream.h>
+
 #include <Eigen/Core>
 #include <cassert>
 #include <cstdint>
@@ -23,7 +25,6 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 							   total_batch_size_bytes_(num_processes * B * T * sizeof(uint16_t)),
 							   local_batch_offset_bytes_(process_rank * B * T * sizeof(uint16_t)),
 							   header_bytes_(kHeadSize * sizeof(int)) {
-
 	if (fs::is_regular_file(shards_dir)) {
 		shard_paths_.push_back(shards_dir);
 	} else if (fs::is_directory(shards_dir)) {
@@ -32,11 +33,11 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 			if (!entry.is_regular_file()) {
 				continue;
 			}
-			std::cout << "find file:" << entry.path() << std::endl;
+			INFO_PRINTLN("find file : {}", fmt::streamed(entry.path()));
 			shard_paths_.push_back(entry.path());
 		}
 	} else {
-		std::cerr << "shards directory is invalid: " << shards_dir << std::endl;
+		INFO_PRINTLN("shard's directory is invalid: {}", fmt::streamed(shards_dir));
 		exit(EXIT_FAILURE);
 	}
 
@@ -77,24 +78,24 @@ int64_t DataLoader::LoadShard(int shard_index) {
 	tokens_file_ = std::ifstream{ filename, std::ios::binary };
 
 	if (!tokens_file_.is_open()) {
-		std::cerr << "Error: cannot open file : " << filename << std::endl;
+		ERROR_PRINTLN("Error: cannot open file : {}", fmt::streamed(filename));
 		exit(EXIT_FAILURE);
 	}
 
 	int header[kHeadSize];
 
 	if (!tokens_file_.read(reinterpret_cast<char *>(header), kHeadSize * sizeof(int))) {
-		std::cerr << "Error: read tokens file: " << filename << std::endl;
+		ERROR_PRINTLN("Error: read tokens file: {} ", fmt::streamed(filename));
 		exit(EXIT_FAILURE);
 	}
 	if (header[0] != 20240520) {
-		std::cerr << ("Bad magic in the data file\n");
-		std::cout << ("---> HINT: Are you passing in a correct file?\n");
-		std::cout << ("---> HINT: The data encoding may have changed, re-run data prepro or refer again to README.\n");
+		ERROR_PRINTLN("Bad magic in the data file");
+		INFO_PRINTLN("---> HINT: Are you passing in a correct file?");
+		INFO_PRINTLN("---> HINT: The data encoding may have changed, re-run data prepro or refer again to README.");
 		exit(EXIT_FAILURE);
 	}
 	if (header[1] != 1) {
-		std::cerr << ("Bad version in data file\n");
+		ERROR_PRINTLN("Bad version in data file");
 		exit(EXIT_FAILURE);
 	}
 
@@ -108,13 +109,13 @@ int64_t DataLoader::LoadShard(int shard_index) {
 	// we expect ntok in the file to be consistent with filesize, assert that is the case
 	int64_t expected_file_size = kHeadSize * sizeof(int) + ntok * sizeof(uint16_t);
 	if (file_size_bytes_ != expected_file_size) {
-		std::cerr << "Error: file size is not as expected" << std::endl;
+		ERROR_PRINTLN("Error: file size is not as expected");
 		exit(EXIT_FAILURE);
 	}
 	// -1 uint16_t due to us taking B*T+1 tokens but moving by B*T tokens
 	shard_num_samples_ = (ntok * sizeof(uint16_t) - sizeof(uint16_t)) / total_batch_size_bytes_;
 
-	std::cout << "from file: " << filename << " load tokens: " << ntok << std::endl;
+	INFO_PRINTLN("from file: {} , load tokens: {}", fmt::streamed(filename), ntok);
 	return ntok;
 }
 
@@ -147,9 +148,10 @@ void DataLoader::LoadBatch() {
 			targets(b, t) = static_cast<int>(buffer_[i + 1]);
 		}
 	}
-
-	DEBUG_PRINTLN("inputs: \n{}...",fmt::streamed(inputs.block<2, 2>(0, 0))); 
-	DEBUG_PRINTLN("targets: \n{}...",fmt::streamed(targets.block<2, 2>(0, 0))); 
+	if (B > 1 && T > 1) {
+		DEBUG_PRINTLN("inputs: \n{}...", fmt::streamed(inputs.block<2, 2>(0, 0)));
+		DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
+	}
 }
 
 void DataLoader::Advance() {

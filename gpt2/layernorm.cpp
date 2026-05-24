@@ -51,6 +51,8 @@ VecBTC LayerNorm::Backward(const VecBTC &d_outputs, const VecBTC &inputs) {
 
 		for (int t = 0; t < seq_len; ++t) {
 			const float rstd_bt = rstd[b](t);
+			// before
+			//
 			// for (int c = 0; c < channels; ++c) {
 			// 	const float term1 = gamma[c] * d_outputs[b](t, c);
 			// 	const float term2 = d_outputs[b].row(t).dot(gamma) / channels;
@@ -58,7 +60,9 @@ VecBTC LayerNorm::Backward(const VecBTC &d_outputs, const VecBTC &inputs) {
 			// 	const float term3 = (x_norm(t, c) * term3_item2) / channels;
 			// 	d_inputs[b](t, c) += rstd_bt * (term1 - term2 - term3);
 			// }
-			//
+			
+			//optim
+
 			Vecf gamma_dy = d_outputs[b].row(t).array() * gamma.transpose().array();
 			const float gamma_dot_dy = gamma_dy.sum() / channels;
 			Vecf term3 = (x_norm.row(t).array() * gamma_dy.dot(x_norm.row(t))) / channels;

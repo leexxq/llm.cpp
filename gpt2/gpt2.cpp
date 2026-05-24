@@ -255,16 +255,16 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 	DEBUG_PRINTLN("logits forward sharp: ({} , {} , {})", logits_.size(), logits_[0].rows(), logits_[0].cols());
 	DEBUG_PRINTLN("logits[0]: \n{}", fmt::streamed(logits_[0].block<2, 2>(0, 0)));
 
-	probs_ = VecBTV(B_);
+	probs = VecBTV(B_);
 	assert(logits_.front().cols() >= config_.vocab_size);
 	for (int b = 0; b < B_; ++b) {
-		probs_[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
+		probs[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
 	}
 	DEBUG_PRINTLN("probs[0] row 0 sum = {}", probs_[0].row(0).sum());
 	DEBUG_PRINTLN("probs forward sharp: ({} , {} , {})", probs_.size(), probs_[0].rows(), probs_[0].cols());
 	DEBUG_PRINTLN("probs[0]: \n{}", fmt::streamed(probs_[0].block<9, 9>(0, 0)));
 
-	this->mean_loss = targets.size() > 0 ? loss_.Forward(probs_, targets) : -1.0f;
+	this->mean_loss = targets.size() > 0 ? loss_.Forward(probs, targets) : -1.0f;
 	DEBUG_PRINTLN("losses 3 first:\n {}", fmt::streamed(loss_.losses[0].head(3)));
 
 	DEBUG_PRINTLN("{} : {}", fmt::styled("mean loss", fmt::fg(fmt::color::dark_red)), mean_loss);
@@ -274,7 +274,7 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 
 void GPT2::Backward() {
 	DEBUG_PRINTLN("---------------{}---------------", fmt::styled("[Backward]", fmt::fg(fmt::color::green) | fmt::emphasis::bold));
-	CrossEntropySoftmaxBackward(d_logits_, probs_, targets_);
+	CrossEntropySoftmaxBackward(d_logits_, probs, targets_);
 	DEBUG_PRINTLN("d_logits_ cross entropy softmax backward sharp: ({} , {} , {})", d_logits_.size(), d_logits_[0].rows(), d_logits_[0].cols());
 	DEBUG_PRINTLN("d_logits_[0]: \n{}", fmt::streamed(d_logits_[0].block<3, 3>(0, 0)));
 	size_t s_b, s_t, s_c;
@@ -360,7 +360,6 @@ void ZeroGrad(Layer &l) {
 	SetZero(l.dl_ln2);
 	SetZero(l.dresidual);
 	SetZero(l.dl_attproj);
-	SetZero(l.dl_residual);
 	SetZero(l.dl_atty);
 	SetZero(l.dl_qkv);
 	SetZero(l.dl_ln1);

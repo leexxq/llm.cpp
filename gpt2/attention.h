@@ -16,7 +16,7 @@ private:
 public:
 	Attention() {}
 	Attention(size_t B, size_t T, size_t C, size_t NH) :
-			pre_att(makeVecBHTC(B, NH, T, C)),
+			pre_att(makeVecBHTC(B, NH, T, T)),
 			att(makeVecBHTC(B, NH, T, T))
 			 {
 	}
@@ -25,5 +25,5 @@ public:
 	VecBTC Backward(const VecBTC &d_outputs, const VecBTC &inputs);
 
 	VecBHTT pre_att;
-	VecBHTC att;
+	VecBHTT att;
 };

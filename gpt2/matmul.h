@@ -14,7 +14,7 @@ public:
 	// d_inputs d_weight d_bias
 	using InputsGrad = VecBTC;
 	MatMul() {}
-	MatMul(size_t C, size_t OC) : weight(Matf::Zero(C, OC)), bias(Vecf::Zero(OC)), d_weight(Matf::Zero(C, OC)), d_bias(Vecf::Zero(OC)) {}
+	MatMul(size_t C, size_t OC) : weight(Matf(C, OC)), bias(Vecf(OC)), d_weight(Matf::Zero(C, OC)), d_bias(Vecf::Zero(OC)) {}
 	FORWARD_NO_DISCARD
 	VecBTC Forward(const VecBTC &);
 	BACKWARD_NO_DISCARD

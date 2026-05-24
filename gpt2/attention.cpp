@@ -37,6 +37,7 @@ Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq,
 
 	// optim
 	pre_att[b][h].triangularView<Eigen::Lower>() = qq * kk.transpose() * scale;
+
 	for (int t = 0; t < seq_len; ++t) {
 		auto tmp_pre_att = pre_att[b][h].row(t).segment(0, t + 1);
 		auto tmp_att = att[b][h].row(t).segment(0, t + 1);
@@ -113,7 +114,7 @@ void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC
 		}
 	}
 
-	d_vv = att_bh.triangularView<Eigen::Lower>().transpose()* d_output;
+	d_vv = att_bh.triangularView<Eigen::Lower>().transpose() * d_output;
 
 	d_kk = d_pre_att.triangularView<Eigen::Lower>().transpose() * qq * scale;
 
