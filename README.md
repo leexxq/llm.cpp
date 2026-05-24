@@ -5,9 +5,7 @@
 - Based on GTest testing framework [googletest](https://github.com/google/googletest)
 - Accelerate training using the Eigen library and OpenMP. [eigen](https://github.com/PX4/eigen)
 - Optimize performance using pprof [pprof](https://github.com/google/pprof)
-- Provides a mindmap to demonstrate training-related architecture and related knowledge.[mindmap](https://github.com/leexxq/llm.cpp/blob/main/gpt2_mindmap.excalidraw)
-
-[mindmap](https://github.com/leexxq/llm.cpp/blob/main/mindmap.png)
+- Provides a mindmap to demonstrate training-related architecture and related knowledge. [mindmap](https://github.com/leexxq/llm.cpp/blob/main/mindmap.png)
 
 
 
