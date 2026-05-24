@@ -10,7 +10,7 @@ public:
 	MatVC wte;
 	MatTC wpe;
 	Encoder() {}
-	Encoder(size_t Vp, size_t maxT, size_t C) : wte(Matf(Vp, C) ),
+	Encoder(size_t Vp, size_t maxT, size_t C) : wte(Matf(Vp, C)),
 												wpe(Matf(maxT, C)),
 												d_wte(Matf::Zero(Vp, C)),
 												d_wpe(Matf::Zero(maxT, C)) {}

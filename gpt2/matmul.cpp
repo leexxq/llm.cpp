@@ -3,8 +3,8 @@
 #include "global.h"
 
 #include <Eigen/Core>
-#include <cstddef>
 #include <cassert>
+#include <cstddef>
 
 VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight) {
 	return MatMulForward(inputs, weight, Vecf());
@@ -18,7 +18,7 @@ VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight, const Vecf &bias)
 	VecBTC output(batchs, Matf(seq_len, oc));
 	for (int b = 0; b < batchs; ++b) {
 		const Matf &tc = inputs[b];
-		output[b] = tc * weight;
+		output[b].noalias() = tc * weight;
 		if (bias.size() != 0) {
 			for (int t = 0; t < seq_len; ++t) {
 				output[b].row(t) += bias.transpose();
@@ -37,10 +37,9 @@ VecBTC MatMulBackward(const VecBTC &d_outputs, const VecBTC &inputs, const Matf 
 
 	VecBTC d_inputs = makeZero(B, T, C);
 
-	for (int b = 0; b < B; ++b) {
-		d_weight.block(0, 0, C, Oc) += inputs[b].block(0, 0, T, C).transpose() * d_outputs[b].block(0, 0, T, Oc); //(C,T) * (T,Oc) = (C,Oc)
-		d_inputs[b].block(0, 0, T, C) += d_outputs[b].block(0, 0, T, Oc) * weight.block(0, 0, C, Oc).transpose(); // (T,Oc) * (Oc,C) = (T,C)
+	MatMulBackward(d_outputs, inputs, weight, d_inputs, d_weight, false, B, T, C, Oc);
 
+	for (int b = 0; b < B; ++b) {
 		for (int i = 0; i < Oc; ++i) {
 			d_bias[i] += d_outputs[b].col(i).sum();
 		}
@@ -53,11 +52,11 @@ void MatMulBackward(const VecBTC &d_outputs, const VecBTC &inputs, const Matf &w
 		VecBTC &d_inputs, Matf &d_weight, bool trans, size_t B, size_t T, size_t C, size_t Oc) {
 	for (int b = 0; b < B; ++b) {
 		if (trans) {
-			d_weight.transpose().block(0, 0, C, Oc) += inputs[b].block(0, 0, T, C).transpose() * d_outputs[b].block(0, 0, T, Oc); //(C,T) * (T,Oc) = (C,Oc)
-			d_inputs[b].block(0, 0, T, C) += d_outputs[b].block(0, 0, T, Oc) * weight.transpose().block(0, 0, C, Oc).transpose(); // (T,Oc) * (Oc,C) = (T,C)
+			d_weight.transpose().block(0, 0, C, Oc).noalias() += inputs[b].block(0, 0, T, C).transpose() * d_outputs[b].block(0, 0, T, Oc); //(C,T) * (T,Oc) = (C,Oc)
+			d_inputs[b].block(0, 0, T, C).noalias() += d_outputs[b].block(0, 0, T, Oc) * weight.transpose().block(0, 0, C, Oc).transpose(); // (T,Oc) * (Oc,C) = (T,C)
 		} else {
-			d_weight.block(0, 0, C, Oc) += inputs[b].block(0, 0, T, C).transpose() * d_outputs[b].block(0, 0, T, Oc); //(C,T) * (T,Oc) = (C,Oc)
-			d_inputs[b].block(0, 0, T, C) += d_outputs[b].block(0, 0, T, Oc) * weight.block(0, 0, C, Oc).transpose(); // (T,Oc) * (Oc,C) = (T,C)
+			d_weight.block(0, 0, C, Oc).noalias() += inputs[b].block(0, 0, T, C).transpose() * d_outputs[b].block(0, 0, T, Oc); //(C,T) * (T,Oc) = (C,Oc)
+			d_inputs[b].block(0, 0, T, C).noalias() += d_outputs[b].block(0, 0, T, Oc) * weight.block(0, 0, C, Oc).transpose(); // (T,Oc) * (Oc,C) = (T,C)
 		}
 	}
 }

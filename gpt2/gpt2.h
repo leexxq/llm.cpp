@@ -10,6 +10,7 @@
 #include <Eigen/Dense>
 #include <cstddef>
 #include <filesystem>
+#include <utility>
 #include <vector>
 
 struct GPT2Config {
@@ -25,35 +26,34 @@ public:
 };
 
 class GPT2 {
+public:
+	using Data_t = std::pair<float *, size_t>;
+
 private:
 	GPT2Config config_;
 	// the weights (parameters) of the model, and their sizes
-	Eigen::VectorXf params_memory;
 	size_t num_parameters;
+
+	StdVec<Data_t> params_memory_;
+	StdVec<Data_t> grads_memory_;
 	// gradients of the weights
-	Eigen::VectorXf grads_memory;
 	// buffers for the AdamW optimizer
-	Eigen::VectorXf m_memory;
-	Eigen::VectorXf v_memory;
+	StdVec<Vecf> m_;
+	StdVec<Vecf> v_;
 	// the activations of the model, and their sizes
-	Eigen::VectorXd acts_memory;
 	size_t num_activations;
 	// gradients of the activations
-	Eigen::VectorXd grads_acts_memory;
 	// other run state configuration
 	// size_t batch_size; // the batch size (B) of current forward pass
 	// size_t seq_len; // the sequence length (T) of current forward pass
 	Matf inputs_; // the input tokens for the current forward pass
 	Mati targets_; // the target tokens for the current forward pass
-	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
-					 //
+
 	Encoder encoder_;
-
 	LayerNorm layernormf_;
-
 	CrossEntropy loss_;
 
-	std::vector<Layer> layers_;
+	StdVec<Layer> layers_;
 
 	size_t B_;
 	size_t T_;
@@ -71,18 +71,20 @@ private:
 
 	std::filesystem::path checkpoint_path_;
 
+public:
+	float mean_loss; // after a forward pass with targets, will be populated with the mean loss
+
 private:
-	bool _init = false;
 	void Init(size_t B, size_t T);
 
 public:
 	GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {}
-	GPT2(GPT2Config config,size_t B,size_t T) : config_{ config },B_(B),T_(T) {}
-	GPT2(const std::filesystem::path &path,size_t B,size_t T);
+	GPT2(GPT2Config config, size_t B, size_t T) : config_{ config }, B_(B), T_(T) {}
+	GPT2(const std::filesystem::path &path, size_t B, size_t T);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
 	void Forward(Mati &, Mati &);
 	void Backward();
 	void ZeroGrad();
-	void Update(float lr , float beta1,float beta2,float eps , float weight,int t);
+	void Update(float lr, float beta1, float beta2, float eps, float weight, int t);
 };

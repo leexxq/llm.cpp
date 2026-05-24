@@ -1,5 +1,6 @@
 #include "dataloader.h"
 
+#include "global.h"
 #include "rand.h"
 
 #include <Eigen/Core>
@@ -22,6 +23,7 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 							   total_batch_size_bytes_(num_processes * B * T * sizeof(uint16_t)),
 							   local_batch_offset_bytes_(process_rank * B * T * sizeof(uint16_t)),
 							   header_bytes_(kHeadSize * sizeof(int)) {
+
 	if (fs::is_regular_file(shards_dir)) {
 		shard_paths_.push_back(shards_dir);
 	} else if (fs::is_directory(shards_dir)) {
@@ -40,7 +42,6 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 
 	if (should_shuffle) {
 		std::mt19937 shuffle_rng{ 42 + num_processes };
-		std::uniform_int_distribution<int> dist(1, 2);
 		this->shuffle_rng_ = shuffle_rng;
 		this->shard_indices_.resize(shard_paths_.size());
 		InitIdentityPermutation(shard_indices_);
@@ -146,16 +147,9 @@ void DataLoader::LoadBatch() {
 			targets(b, t) = static_cast<int>(buffer_[i + 1]);
 		}
 	}
-	std::cout << "inputs : " << std::endl;
-	std::cout << inputs.block<2, 2>(0, 0) << "\n"
-			  << ".\n"
-			  << ".\n"
-			  << "." << std::endl;
-	std::cout << "targets: " << std::endl;
-	std::cout << targets.block<2, 2>(0, 0) << "\n"
-			  << ".\n"
-			  << ".\n"
-			  << "." << std::endl;
+
+	DEBUG_PRINTLN("inputs: \n{}...",fmt::streamed(inputs.block<2, 2>(0, 0))); 
+	DEBUG_PRINTLN("targets: \n{}...",fmt::streamed(targets.block<2, 2>(0, 0))); 
 }
 
 void DataLoader::Advance() {

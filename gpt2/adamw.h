@@ -1,11 +1,8 @@
 #pragma once
-#include "global.h"
-#include "matmul.h"
 
 #include <cmath>
-#include <vector>
 
-struct AdamWParam {
+struct AdamWParams {
 	float lr;
 	float beta1;
 	float beta2;
@@ -14,8 +11,7 @@ struct AdamWParam {
 	int t;
 };
 
-template <class param_datas_type, class param_grads_type>
-void AdamW(param_datas_type &data, param_grads_type &grad_data, param_grads_type &m, param_grads_type &v, size_t size, const AdamWParam &aw_params) {
+void AdamW(float* data, float * grad_data, float* m, float* v, size_t size, const AdamWParams &aw_params) {
 	for (size_t i = 0; i < size; ++i) {
 		float param = data[i];
 		float grad = grad_data[i];

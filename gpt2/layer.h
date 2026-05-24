@@ -24,24 +24,23 @@ private:
 	VecBT3C l_qkv_;
 	VecBTC l_ln1_;
 
-	VecBTC dl_residual2_;
-	VecBTC dl_fcproj_;
-	VecBT4C dl_fch_gelu_;
-	VecBT4C dl_fch_;
-	VecBTC dl_ln2_;
-	VecBTC dresidual_;
-	VecBTC dl_attproj_;
-	VecBTC dl_residual_;
-	VecBTC dl_atty_;
-	VecBTC dl_qkv_;
-	VecBTC dl_ln1_;
-
 	void Init(size_t B, size_t T, size_t C, size_t V, size_t NH);
 
 public:
+	VecBTC dl_residual2;
+	VecBTC dl_fcproj;
+	VecBT4C dl_fch_gelu;
+	VecBT4C dl_fch;
+	VecBTC dl_ln2;
+	VecBTC dresidual;
+	VecBTC dl_attproj;
+	VecBTC dl_residual;
+	VecBTC dl_atty;
+	VecBTC dl_qkv;
+	VecBTC dl_ln1;
+
 	LayerNorm layernorm1;
 	LayerNorm layernorm2;
-
 	MatMul fch;
 	MatMul fcproj;
 	MatMul qkv;
@@ -49,9 +48,7 @@ public:
 	MatMul mm_logits;
 
 	GELU fch_gelu;
-
 	Attention attention;
-
 	Residual residual1;
 	Residual residual2;
 
