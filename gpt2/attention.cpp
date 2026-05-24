@@ -2,39 +2,52 @@
 
 #include "global.h"
 
-#include <algorithm>
+#include <Eigen/Core>
 #include <cassert>
 #include <cstddef>
 
 Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();
 	size_t head_channels = vv.cols();
-	float scale = 1.f / std::sqrt(head_channels);
-	Matf output = Matf::Zero(seq_len, head_channels);
+	float scale = 1.f / std::sqrtf(head_channels);
+	Matf output = Matf(seq_len, head_channels);
 
+	// before
+	// for (int t = 0; t < seq_len; ++t) {
+	// 	float maxval = -100000.0f;
+	// 	for (int t1 = 0; t1 <= t; ++t1) {
+	// 		float val = qq.row(t).dot(kk.row(t1)) * scale;
+	// 		pre_att[b][h](t, t1) = val;
+	// 		maxval = std::max(maxval, val);
+	// 	}
+	//
+	// 	Vecf exp = (pre_att[b][h].row(t).segment(0, t + 1).array() - maxval).exp();
+	// 	float expsum_inv = exp.sum();
+	// 	expsum_inv = expsum_inv == 0.0f ? 0.0f : 1.0f / expsum_inv;
+	// 	att[b][h].row(t).segment(0, t + 1) = exp.segment(0, t + 1) * expsum_inv;
+	// 	for (int t1 = t + 1; t1 < seq_len; ++t1) {
+	// 		att[b][h](t, t1) = 0.0f;
+	// 	}
+	//
+	// 	for (int t1 = 0; t1 <= t; ++t1) {
+	// 		output.row(t) += att[b][h](t, t1) * vv.row(t1);
+	// 	}
+	// }
+	//
+
+	// optim
+	pre_att[b][h].triangularView<Eigen::Lower>() = qq * kk.transpose() * scale;
 	for (int t = 0; t < seq_len; ++t) {
-		float maxval = -100000.0f;
-		for (int t1 = 0; t1 <= t; ++t1) {
-			float val = qq.row(t).dot(kk.row(t1)) * scale;
-			pre_att[b][h](t, t1) = val;
-			maxval = std::max(maxval, val);
-		}
-
-		Vecf exp = (pre_att[b][h].row(t).segment(0, t + 1).array() - maxval).exp();
+		auto tmp_pre_att = pre_att[b][h].row(t).segment(0, t + 1);
+		auto tmp_att = att[b][h].row(t).segment(0, t + 1);
+		float maxval = tmp_pre_att.maxCoeff();
+		Vecf exp = (tmp_pre_att.array() - maxval).exp();
 		float expsum_inv = exp.sum();
 		expsum_inv = expsum_inv == 0.0f ? 0.0f : 1.0f / expsum_inv;
-		for (int t1 = 0; t1 < seq_len; ++t1) {
-			if (t1 <= t) {
-				att[b][h](t, t1) = exp[t1] * expsum_inv;
-			} else {
-				att[b][h](t, t1) = 0.0f;
-			}
-		}
-
-		for (int t1 = 0; t1 <= t; ++t1) {
-			output.row(t) += att[b][h](t, t1) * vv.row(t1);
-		}
+		tmp_att = exp.segment(0, t + 1) * expsum_inv;
+		att[b][h].row(t).segment(t + 1, seq_len - t - 1).setZero();
 	}
+	output = att[b][h].triangularView<Eigen::Lower>() * vv;
 
 	return output;
 }
@@ -49,7 +62,7 @@ void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC
 
 	using Eigen::Ref;
 
-	const Matf& d_output = d_outputs[b].block(0, h * head_channels, seq_len, head_channels);
+	const Matf &d_output = d_outputs[b].block(0, h * head_channels, seq_len, head_channels);
 
 	Ref<Matf> d_qq = d_inputs[b].block(0, 0, seq_len, channels).block(0, h * head_channels, seq_len, head_channels);
 	Ref<Matf> d_kk = d_inputs[b].block(0, channels, seq_len, channels).block(0, h * head_channels, seq_len, head_channels);
@@ -57,27 +70,65 @@ void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC
 
 	const Matf &att_bh = att[b][h];
 
-	for (int t = 0; t < seq_len; ++t) {
-		Matf d_att = Matf::Zero(seq_len, seq_len);
-		Matf d_pre_att = Matf::Zero(seq_len, seq_len);
-		for (int t1 = 0; t1 <= t; ++t1) {
-			d_vv.row(t1) += att_bh(t, t1) * d_output.row(t);
-			d_att(t, t1) += d_output.row(t).dot(vv.row(t1));
-		}
+	// before
 
+	// Matf d_att = Matf::Zero(seq_len, seq_len);
+	// Matf d_pre_att = Matf::Zero(seq_len, seq_len);
+	//
+	// for (int t = 0; t < seq_len; ++t) {
+	// 	for (int t1 = 0; t1 <= t; ++t1) {
+	// 		d_vv.row(t1) += att_bh(t, t1) * d_output.row(t);
+	// 		d_att(t, t1) += d_output.row(t).dot(vv.row(t1));
+	// 	}
+	//
+	// 	for (int t1 = 0; t1 <= t; ++t1) {
+	// 		for (int t2 = 0; t2 <= t; ++t2) {
+	// 			float local_derivative = ((t2 == t1 ? 1.0 : 0.0f) - att_bh(t, t2)) * att_bh(t, t1);
+	// 			d_pre_att(t, t2) += local_derivative * d_att(t, t1);
+	// 		}
+	// 	}
+	//
+	// 	for (int t1 = 0; t1 <= t; ++t1) {
+	// 		float factor = scale * d_pre_att(t, t1);
+	// 		d_qq.row(t) += factor * kk.row(t1);
+	// 		d_kk.row(t1) += factor * qq.row(t);
+	// 	}
+	//
+	// }
+
+	//optim
+
+	Matf d_att = Matf(seq_len, seq_len);
+
+	d_att.triangularView<Eigen::Lower>() = d_output * vv.transpose();
+
+	Matf d_pre_att = Matf::Zero(seq_len, seq_len);
+
+	for (int t = 0; t < seq_len; ++t) {
 		for (int t1 = 0; t1 <= t; ++t1) {
 			for (int t2 = 0; t2 <= t; ++t2) {
 				float local_derivative = ((t2 == t1 ? 1.0 : 0.0f) - att_bh(t, t2)) * att_bh(t, t1);
 				d_pre_att(t, t2) += local_derivative * d_att(t, t1);
 			}
 		}
-
-		for (int t1 = 0; t1 <= t; ++t1) {
-			float factor = scale * d_pre_att(t, t1);
-			d_qq.row(t) += factor * kk.row(t1);
-			d_kk.row(t1) += factor * qq.row(t);
-		}
 	}
+
+	d_vv = att_bh.triangularView<Eigen::Lower>().transpose()* d_output;
+
+	d_kk = d_pre_att.triangularView<Eigen::Lower>().transpose() * qq * scale;
+
+	d_qq = d_pre_att.triangularView<Eigen::Lower>() * kk * scale;
+
+	// std::cout << d_att << std::endl;
+	// std::cout << "---------" << std::endl;
+	// std::cout << d_pre_att << std::endl;
+	// std::cout << "---------" << std::endl;
+	// std::cout << d_qq << std::endl;
+	// std::cout << "---------" << std::endl;
+	// std::cout << d_kk << std::endl;
+	// std::cout << "---------" << std::endl;
+	// std::cout << d_vv << std::endl;
+	// std::cout << "---------" << std::endl;
 }
 
 VecBTC Attention::Forward(const VecBTC &inputs) {
