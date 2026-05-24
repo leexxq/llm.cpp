@@ -1,14 +1,16 @@
-#include <matmul.h>
+#include "global.h"
 
 #include <gtest/gtest.h>
+#include <matmul.h>
 
 class TestMatMul : public testing::Test {
 protected:
 	MatMul matmul;
 };
 
-TEST_F(TestMatMul, forward) {
-	VecBTC input{
+TEST_F(TestMatMul, forward1) {
+	matmul = MatMul();
+	VecBTC inputs{
 
 		Matf{
 				{ -0.6913, 1.6103, 0.1138, 0.3595 },
@@ -46,11 +48,69 @@ TEST_F(TestMatMul, forward) {
 		}
 	};
 
-	VecBTC res = matmul.Forward(input);
+	VecBTC res = matmul.Forward(inputs);
 
-	ASSERT_TRUE(res.size() == input.size() && res.front().rows() == input.front().rows() && res.front().cols() == matmul.weight.cols());
+	ASSERT_TRUE(res.size() == inputs.size() && res.front().rows() == inputs.front().rows() && res.front().cols() == matmul.weight.cols());
 
 	for (int i = 0; i < 2; ++i) {
 		EXPECT_TRUE(res[i].isApprox(resexp[i], 0.001));
 	}
 }
+
+TEST_F(TestMatMul, backward1) {
+	matmul = MatMul(4, 5);
+	VecBTC inputs = makeVecBTC(2, 3, 4);
+	inputs[0] << 1.9170, 0.7433, -1.6831, -0.5770,
+			0.5002, -0.1631, -0.6377, 0.1790,
+			0.8014, 0.9574, 0.5211, 0.6669;
+
+	inputs[1] << 0.0507, -0.7415, 0.7975, -0.1952,
+			-0.0915, -0.2075, -0.6837, -1.4144,
+			-1.0925, -0.9400, 2.0981, 2.5490;
+
+	matmul.weight << 0.5496, -1.0675, -0.3498, -1.7053, -0.0094,
+			0.8118, 0.6951, 1.7514, -0.0827, -0.7742,
+			0.6460, -0.5852, 1.0690, 2.4317, -1.1704,
+			0.0139, -0.5536, -0.0932, 0.6729, -0.1479;
+	matmul.bias << -0.5602, -0.6464, -0.2690, 0.5687, -0.1302;
+
+	VecBTC d_outputs = VecBTC(2, Matf::Ones(3, 5));
+
+	VecBTC res = matmul.Backward(d_outputs, inputs);
+
+	VecBTC resexp = makeVecBTC(2, 3, 4);
+
+	resexp[0] << -2.5823, 2.4014, 2.3912, -0.1079,
+			-2.5823, 2.4014, 2.3912, -0.1079,
+			-2.5823, 2.4014, 2.3912, -0.1079;
+
+	resexp[1] << -2.5823, 2.4014, 2.3912, -0.1079,
+			-2.5823, 2.4014, 2.3912, -0.1079,
+			-2.5823, 2.4014, 2.3912, -0.1079;
+
+	EXPECT_TRUE(res[0].isApprox(resexp[0], 0.001f));
+	EXPECT_TRUE(res[1].isApprox(resexp[1], 0.001f));
+
+	Matf d_weightexp(4, 5);
+	d_weightexp << 2.0853, 2.0853, 2.0853, 2.0853, 2.0853,
+			-0.3514, -0.3514, -0.3514, -0.3514, -0.3514,
+			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
+			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
+
+	Vecf d_biasexp(5);
+	d_biasexp << 6., 6., 6., 6., 6.;
+
+	EXPECT_TRUE(matmul.d_weight.isApprox(d_weightexp, 0.001f));
+	EXPECT_TRUE(matmul.d_bias.isApprox(d_biasexp, 0.001f));
+}
+
+// TEST(TestMatMulGlobalFuction,forward){
+//
+// }
+//
+// TEST(TestMatMulGlobalFuction,backward){
+//
+// }
+
+
+
