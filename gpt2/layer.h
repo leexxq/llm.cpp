@@ -34,7 +34,6 @@ public:
 	VecBTC dl_ln2;
 	VecBTC dresidual;
 	VecBTC dl_attproj;
-	VecBTC dl_residual;
 	VecBTC dl_atty;
 	VecBTC dl_qkv;
 	VecBTC dl_ln1;

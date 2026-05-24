@@ -27,7 +27,6 @@ void Layer::Init(size_t B, size_t T, size_t C, size_t V, size_t NH) {
 	dl_ln2 = makeZero(B, T, C);
 	dresidual = makeZero(B, T, C);
 	dl_attproj = makeZero(B, T, C);
-	dl_residual = makeZero(B, T, C);
 	dl_atty = makeZero(B, T, C);
 	dl_qkv = makeZero(B, T, 3 * C);
 	dl_ln1 = makeZero(B, T, C);
@@ -112,7 +111,7 @@ VecBTC Layer::Backward(const VecBTC &d_outputs, const VecBTC &residual) {
 
 	auto dresidual1_wrap = residual1.Backward(dl_residual2);
 	dl_attproj += dresidual1_wrap.first;
-	dl_residual += dresidual1_wrap.second;
+
 	assert(dl_attproj.size() > 0);
 	DEBUG_PRINTLN("residual1_ backward sharp: ({} , {} , {})", dl_attproj.size(), dl_attproj[0].rows(), dl_attproj[0].cols());
 	assert(dl_residual2.size() > 0);
@@ -134,10 +133,11 @@ VecBTC Layer::Backward(const VecBTC &d_outputs, const VecBTC &residual) {
 	DEBUG_PRINTLN("qkv_ backward sharp: ({} , {} , {})", dl_ln1.size(), l_ln1_[0].rows(), l_ln1_[0].cols());
 	DEBUG_PRINTLN("dl_ln1_[0]: \n{}", fmt::streamed(dl_ln1[0].block<2, 2>(0, 0)));
 
-	VecBTC d_inputs = layernorm1.Backward(dl_ln1, residual);
-	assert(d_inputs.size() > 0);
-	DEBUG_PRINTLN("layernorm backward sharp: ({} , {} , {})", d_inputs.size(), l_ln1_[0].rows(), l_ln1_[0].cols());
-	DEBUG_PRINTLN("d_inputs[0]: \n{}", fmt::streamed(d_inputs[0].block<2, 2>(0, 0)));
+	dresidual1_wrap.second += layernorm1.Backward(dl_ln1, residual);
 
-	return d_inputs;
+	assert(dl_residual.size() > 0);
+	DEBUG_PRINTLN("layernorm backward sharp: ({} , {} , {})", dl_residual.size(), dl_residual[0].rows(), dl_residual[0].cols());
+	DEBUG_PRINTLN("dl_residual[0]: \n{}", fmt::streamed(dl_residual[0].block<2, 2>(0, 0)));
+
+	return dresidual1_wrap.second;
 }
