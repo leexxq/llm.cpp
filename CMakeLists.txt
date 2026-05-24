@@ -70,13 +70,33 @@ target_compile_definitions(gpt2cpp PRIVATE
     $<$<CONFIG:Debug>:DEBUG>
 )
 
+
+
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	# --- using follow command install openmp ---
+	# --- brew install libomp---
+
+	# --- 解决 macOS 下 CMake 找不到 OpenMP 的问题 ---
+	if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		execute_process(COMMAND brew --prefix libomp
+						OUTPUT_VARIABLE HOMEBREW_LIBOMP_PREFIX
+						OUTPUT_STRIP_TRAILING_WHITESPACE)
+		
+		set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${HOMEBREW_LIBOMP_PREFIX}/include")
+		set(OpenMP_CXX_LIB_NAMES "omp")
+		set(OpenMP_omp_LIBRARY "${HOMEBREW_LIBOMP_PREFIX}/lib/libomp.dylib")
+	endif()
+	# ---------------------------------------------
+
+
 	target_compile_options(gpt2cpp PUBLIC 
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Release>:-march=native>
         $<$<CONFIG:Release>:-ffast-math>
         $<$<CONFIG:Release>:-Wno-nan-infinity-disabled>
-    )
+	)
+
 
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 	target_compile_options(gpt2cpp PUBLIC
@@ -88,6 +108,12 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 endif()
 
 
+# find_package(OpenMP REQUIRED CXX)
+find_package(OpenMP REQUIRED CXX)
+if(OpenMP_CXX_FOUND)
+	target_link_libraries(gpt2cpp PUBLIC $<$<CONFIG:Release>:OpenMP::OpenMP_CXX>)
+endif()
+
 
 
 #-----------------
@@ -95,7 +121,20 @@ endif()
 
 add_executable(traingpt2 train.cpp)
 
-target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp )
+target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
+
+if(APPLE)
+	find_library(PROFILER_LIBRARY 
+		NAMES profiler 
+		PATHS /opt/homebrew/lib /usr/local/lib
+	)
+	# 加一个安全检查，如果真没找到就报错提示
+	if(NOT PROFILER_LIBRARY)
+		message(FATAL_ERROR "找不到 profiler 库！请确认是否已经执行了 brew install gperftools")
+	endif()
+
+	target_link_libraries(traingpt2 PRIVATE ${PROFILER_LIBRARY})
+endif()
 
 add_custom_command(TARGET traingpt2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
