@@ -1,0 +1,70 @@
+B = 4 , T = 64 , Running in CPU
+
+-- add -O3 -fast-math -match=native
+step 0, mean loss:5.0760326, duration:12364ms, forward duration:1117ms, backward duration:10958ms
+step 1, mean loss:4.8561616, duration:12038ms, forward duration:1077ms, backward duration:10877ms
+step 2, mean loss:4.6301184, duration:12030ms, forward duration:1044ms, backward duration:10939ms
+step 3, mean loss:4.4040294, duration:12042ms, forward duration:1041ms, backward duration:10953ms
+step 4, mean loss:4.2144594, duration:12126ms, forward duration:1083ms, backward duration:10993ms
+step 5, mean loss:4.0770626, duration:12074ms, forward duration:1065ms, backward duration:10963ms
+step 6, mean loss:3.967034, duration:12019ms, forward duration:1043ms, backward duration:10931ms
+step 7, mean loss:3.858097, duration:12053ms, forward duration:1043ms, backward duration:10960ms
+step 8, mean loss:3.727633, duration:12195ms, forward duration:1070ms, backward duration:11077ms
+step 9, mean loss:3.6168823, duration:12099ms, forward duration:1063ms, backward duration:10989ms
+step 10, mean loss:3.482536, duration:12123ms, forward duration:1059ms, backward duration:11016ms
+
+
+--add openmp 
+step 0, mean loss:5.0760326, duration:10955ms, forward duration:626ms, backward duration:10113ms
+step 1, mean loss:4.8561606, duration:10789ms, forward duration:628ms, backward duration:10092ms
+step 2, mean loss:4.630117, duration:10824ms, forward duration:639ms, backward duration:10132ms
+step 3, mean loss:4.4040265, duration:10819ms, forward duration:630ms, backward duration:10137ms
+step 4, mean loss:4.2144575, duration:10745ms, forward duration:598ms, backward duration:10099ms
+step 5, mean loss:4.077062, duration:10828ms, forward duration:628ms, backward duration:10147ms
+step 6, mean loss:3.9670334, duration:10797ms, forward duration:638ms, backward duration:10108ms
+step 7, mean loss:3.858098, duration:10710ms, forward duration:592ms, backward duration:10068ms
+step 8, mean loss:3.727633, duration:10762ms, forward duration:612ms, backward duration:10105ms
+step 9, mean loss:3.6168876, duration:10678ms, forward duration:586ms, backward duration:10039ms
+step 10, mean loss:3.4825377, duration:10734ms, forward duration:621ms, backward duration:10063ms
+
+
+--optim LayerNorm::Backward
+step 0, mean loss:5.0760326, duration:1895ms, forward duration:709ms, backward duration:840ms
+step 1, mean loss:4.856163, duration:1582ms, forward duration:646ms, backward duration:840ms
+step 2, mean loss:4.630117, duration:1515ms, forward duration:626ms, backward duration:835ms
+step 3, mean loss:4.404028, duration:1516ms, forward duration:622ms, backward duration:837ms
+step 4, mean loss:4.2144585, duration:1518ms, forward duration:619ms, backward duration:844ms
+step 5, mean loss:4.077062, duration:1522ms, forward duration:631ms, backward duration:837ms
+step 6, mean loss:3.9670348, duration:1524ms, forward duration:629ms, backward duration:840ms
+step 7, mean loss:3.858096, duration:1538ms, forward duration:636ms, backward duration:847ms
+step 8, mean loss:3.7276309, duration:1528ms, forward duration:628ms, backward duration:846ms
+step 9, mean loss:3.6168895, duration:1522ms, forward duration:633ms, backward duration:836ms
+step 10, mean loss:3.4825392, duration:1520ms, forward duration:631ms, backward duration:834ms
+
+
+--optim Attention::Forward
+step 0, mean loss:5.0760307, duration:1447ms, forward duration:487ms, backward duration:843ms
+step 1, mean loss:4.8561616, duration:1531ms, forward duration:505ms, backward duration:870ms
+step 2, mean loss:4.6301174, duration:1375ms, forward duration:468ms, backward duration:835ms
+step 3, mean loss:4.4040284, duration:1356ms, forward duration:465ms, backward duration:839ms
+step 4, mean loss:4.2144585, duration:1361ms, forward duration:460ms, backward duration:853ms
+step 5, mean loss:4.0770607, duration:1326ms, forward duration:445ms, backward duration:812ms
+step 6, mean loss:3.9670348, duration:1272ms, forward duration:418ms, backward duration:803ms
+step 7, mean loss:3.8580954, duration:1289ms, forward duration:418ms, backward duration:821ms
+step 8, mean loss:3.7276335, duration:1345ms, forward duration:461ms, backward duration:833ms
+step 9, mean loss:3.6168933, duration:1353ms, forward duration:465ms, backward duration:838ms
+step 10, mean loss:3.482539, duration:1349ms, forward duration:460ms, backward duration:839ms
+
+--optim Attention::Backward
+step 0, mean loss:5.0760307, duration:1255ms, forward duration:487ms, backward duration:688ms
+step 1, mean loss:4.8561616, duration:1202ms, forward duration:467ms, backward duration:681ms
+step 2, mean loss:4.6301165, duration:1190ms, forward duration:449ms, backward duration:686ms
+step 3, mean loss:4.4040294, duration:1194ms, forward duration:456ms, backward duration:684ms
+step 4, mean loss:4.2144585, duration:1199ms, forward duration:451ms, backward duration:690ms
+step 5, mean loss:4.0770626, duration:1192ms, forward duration:461ms, backward duration:683ms
+step 6, mean loss:3.9670336, duration:1196ms, forward duration:452ms, backward duration:690ms
+step 7, mean loss:3.8580956, duration:1188ms, forward duration:453ms, backward duration:687ms
+step 8, mean loss:3.7276292, duration:1188ms, forward duration:453ms, backward duration:682ms
+step 9, mean loss:3.6168835, duration:1191ms, forward duration:450ms, backward duration:685ms
+step 10, mean loss:3.4825342, duration:1187ms, forward duration:451ms, backward duration:681ms
+
