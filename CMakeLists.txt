@@ -123,18 +123,19 @@ add_executable(traingpt2 train.cpp)
 
 target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
 
-if(APPLE)
-	find_library(PROFILER_LIBRARY 
-		NAMES profiler 
-		PATHS /opt/homebrew/lib /usr/local/lib
-	)
-	# 加一个安全检查，如果真没找到就报错提示
-	if(NOT PROFILER_LIBRARY)
-		message(FATAL_ERROR "找不到 profiler 库！请确认是否已经执行了 brew install gperftools")
-	endif()
-
-	target_link_libraries(traingpt2 PRIVATE ${PROFILER_LIBRARY})
-endif()
+# if(APPLE)
+# 	find_library(PROFILER_LIBRARY 
+# 		NAMES profiler 
+# 		PATHS /opt/homebrew/lib /usr/local/lib
+# 	)
+#
+# 	# 加一个安全检查，如果真没找到就报错提示
+# 	if(NOT PROFILER_LIBRARY)
+# 		message(FATAL_ERROR "找不到 profiler 库！请确认是否已经执行了 brew install gperftools")
+# 	endif()
+#
+# 	target_link_libraries(traingpt2 PRIVATE ${PROFILER_LIBRARY})
+# endif()
 
 add_custom_command(TARGET traingpt2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
