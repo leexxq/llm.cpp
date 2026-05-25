@@ -35,17 +35,19 @@ void GPT2::Init(size_t B, size_t T) {
 	// Init GPT-2 Arch
 	{
 		encoder_ = Encoder{ config_.padded_vocab_size, config_.max_seq_len, config_.channels };
+
+		//layers init
 		for (int l = 0; l < config_.num_layers; ++l) {
 			layers_.emplace_back(B, T, config_.channels, config_.vocab_size, config_.num_heads);
 		}
 		layernormf_ = LayerNorm{ B, T, config_.channels };
 		loss_ = CrossEntropy{ B, T };
-		residual_ = VecLBTC(config_.num_layers);
+		// residual_ = VecLBTC(config_.num_layers);
 
+		residual_ = makeZero(config_.num_layers, B, T, config_.channels);
 		d_logits_ = makeZero(B, T, config_.padded_vocab_size);
 		d_lnf_ = makeZero(B, T, config_.channels);
 		d_residual3_ = makeZero(config_.num_layers, B, T, config_.channels);
-
 		d_encoded = makeZero(B, T, config_.channels);
 	}
 

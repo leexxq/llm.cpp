@@ -32,7 +32,7 @@ void Encoder::Backward(const VecBTC &d_outputs, const Matf &input) {
 
 	// optim
 	for (int b = 0; b < batchs; ++b) {
-		d_wpe += d_outputs[b];
+		d_wpe.block(0, 0, seq_len, channels) += d_outputs[b];
 		for (int t = 0; t < seq_len; ++t) {
 			d_wte.row(input(b, t)) += d_outputs[b].row(t);
 		}

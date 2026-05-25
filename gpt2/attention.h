@@ -16,8 +16,8 @@ private:
 public:
 	Attention() {}
 	Attention(size_t B, size_t T, size_t C, size_t NH) :
-			pre_att(makeVecBHTC(B, NH, T, T)),
-			att(makeVecBHTC(B, NH, T, T))
+			pre_att(makeZero(B, NH, T, T)),
+			att(makeZero(B, NH, T, T))
 			 {
 	}
 
