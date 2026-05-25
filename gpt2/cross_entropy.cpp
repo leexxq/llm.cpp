@@ -18,7 +18,7 @@ void CrossEntropySoftmaxBackward(VecBTC &d_logits, const VecBTC &probs, const Ma
 }
 
 float CrossEntropy::Forward(const VecBTV &probs, const Mati &targets) {
-	float mean_loss;
+	float mean_loss = 0.f;
 	size_t batchs = targets.rows();
 	size_t seq_len = targets.cols();
 
