@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
 	app.add_option("-t,--seq_length",T,"train tokens length");
 	app.add_option("--gen_token",genT,"generative text's tokens length");
 	app.add_option("--val_sets_batch",val_num_batches,"validate sets's batch for test");
-	app.add_option("-i --iteration",iterations,"train iterations number");
+	app.add_option("-i,--iteration",iterations,"train iterations number");
 
 	CLI11_PARSE(app,argc,argv);
 
