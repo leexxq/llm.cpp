@@ -7,7 +7,7 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 BASE_URL="https://huggingface.co/datasets/karpathy/llmc-starter-pack/resolve/main/"
 
 # Directory paths based on script location
-SAVE_DIR_PARENT="$SCRIPT_DIR/data/"
+SAVE_DIR_PARENT="$SCRIPT_DIR/data"
 SAVE_DIR_TINY="$SCRIPT_DIR/data/tinyshakespeare"
 SAVE_DIR_HELLA="$SCRIPT_DIR/data/hellaswag"
 
@@ -78,4 +78,3 @@ run_in_parallel() {
 run_in_parallel 6 "${download_commands[@]}"
 
 echo "All files downloaded and saved in their respective directories"
-
