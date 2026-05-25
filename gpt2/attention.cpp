@@ -9,7 +9,7 @@
 Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();
 	size_t head_channels = vv.cols();
-	float scale = 1.f / std::sqrtf(head_channels);
+	float scale = 1.f / std::sqrt(head_channels);
 	Matf output = Matf(seq_len, head_channels);
 
 	// before

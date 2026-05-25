@@ -20,7 +20,7 @@ VecBTC LayerNorm::Forward(const VecBTC &inputs) {
 
 			rstd_axis /= channels;
 
-			rstd_axis = 1.f / std::sqrtf(rstd_axis + eps);
+			rstd_axis = 1.f / std::sqrt(rstd_axis + eps);
 
 			rstd[b](t) = rstd_axis;
 

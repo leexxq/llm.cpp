@@ -40,7 +40,5 @@ sudo apt-get install libomp-dev
 ```bash
 cd build
 make -j gpt2test
-
 ```
-
 
