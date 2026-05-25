@@ -15,12 +15,12 @@
 
 
 ```bash
-# download train datasets
+# Download train datasets
+# For Chinese users, this might require a bit of magic.
 bash ./download_data_pack.sh
 
-# build
-mkdir build
-cd build
+# Build
+mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j
 ./traingpt2
