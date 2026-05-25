@@ -1,3 +1,4 @@
+#include "CLI/CLI.hpp"
 #include "gpt2/dataloader.h"
 #include "gpt2/global.h"
 #include "gpt2/gpt2.h"
@@ -8,6 +9,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <vector>
 void SafePrint(const std::string &rep) {
 	if (rep.empty()) {
@@ -30,8 +32,27 @@ int SampleMult(const Vecf &probs, float coin) {
 	return probs.size() - 1;
 }
 
-int main() {
+
+int main(int argc, char **argv) {
+
+	CLI::App app{"Train parameters"};
+
+	std::string datasets_dir;
+	app.add_option("-d,--datasets",datasets_dir,"datasets directory");
+
+	size_t B = 4;
+	size_t T = 64;
+	size_t genT = 64;
+	size_t val_num_batches = 5;
+	app.add_option("-b,--batch",B,"training batchs");
+	app.add_option("-t,--seq_length",T,"train tokens length");
+	app.add_option("--gen_token",genT,"generative text's tokens length");
+	app.add_option("--val_sets_batch",val_num_batches,"validate sets's batch for test");
+
+	CLI11_PARSE(app,argc,argv);
+
 	namespace fs = std::filesystem;
+
 	fs::path tiny_stories_train{ "data/tinystories/TinyStories_train.bin" };
 	fs::path tiny_stories_val{ "data/tinystories/TinyStories_val.bin" };
 	fs::path tiny_shakespeare_train{ "data/tinyshakespeare/tiny_shakespeare_train.bin" };
@@ -40,8 +61,6 @@ int main() {
 	fs::path val_tokens = exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
 	fs::path checkpoint_path{ "data/gpt2_124M.bin" };
 	fs::path tokenizer_path{ "data/gpt2_tokenizer.bin" };
-	size_t B = 4;
-	size_t T = 64;
 
 	GPT2 gpt2{ checkpoint_path, B, T };
 	DataLoader train_loader{ train_tokens, B, T, 0, 1, true };
@@ -52,14 +71,12 @@ int main() {
 
 	Tokenizer tokenizer{ tokenizer_path };
 
-	const int val_num_batches = 5;
 
 	constexpr uint64_t rng_state = 1337;
 	std::uniform_real_distribution<float> dist(0, 1);
 
 	std::mt19937 shuffle_rng{ rng_state };
 	Mati gen_tokens(B, T);
-	constexpr int genT = 64;
 
 	INFO_PRINTLN("---------------{}---------------", fmt::styled("[Train...]", fmt::fg(fmt::color::green) | fmt::emphasis::bold));
 

@@ -47,5 +47,6 @@ sudo apt-get install libomp-dev
 cd build
 cmake -DENABLE_TESTS=ON ..
 make -j gpt2test
+./tests/gpt2test
 ```
 

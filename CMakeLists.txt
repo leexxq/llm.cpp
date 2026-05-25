@@ -92,11 +92,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         $<$<CONFIG:Release>:-march=native>
         $<$<CONFIG:Release>:-ffast-math>
 	)
+
 	check_cxx_compiler_flag("-Wno-nan-infinity-disabled" COMPILER_SUPPORTS_NO_NAN_INF)
 	if(COMPILER_SUPPORTS_NO_NAN_INF)
-		target_compile_options(gpt2cpp PRIVATE 
-			$<$<CONFIG:Release>:-Wno-nan-infinity-disabled>
-		)
+		target_compile_options(gpt2cpp PUBLIC $<$<CONFIG:Release>:-Wnan-infinity-disabled>)
 	endif()
 
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")

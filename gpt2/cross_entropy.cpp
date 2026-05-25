@@ -23,7 +23,7 @@ float CrossEntropy::Forward(const VecBTV &probs, const Mati &targets) {
 
 	for (int b = 0; b < batchs; ++b) {
 		for (int t = 0; t < seq_len; ++t) {
-			losses[b](t) = -logf(probs[b](t, targets(b, t)));
+			losses[b](t) = -std::log(probs[b](t, targets(b, t)));
 			mean_loss += losses[b](t);
 		}
 	}

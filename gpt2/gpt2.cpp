@@ -257,7 +257,7 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 	DEBUG_PRINTLN("logits forward sharp: ({} , {} , {})", logits_.size(), logits_[0].rows(), logits_[0].cols());
 	DEBUG_PRINTLN("logits[0]: \n{}", fmt::streamed(logits_[0].block<2, 2>(0, 0)));
 
-	probs = VecBTV(B_);
+	probs = makeVecBTV(B,T,config_.vocab_size);
 	assert(logits_.front().cols() >= config_.vocab_size);
 	for (int b = 0; b < B_; ++b) {
 		probs[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
