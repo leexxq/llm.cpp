@@ -23,14 +23,14 @@ make -j
 
 ## Faster training
 
-OpenMP (optional):
+### OpenMP (optional):
 
-macOS: 
+##### macOS: 
 ```bash
 brew install libomp
 ```
 
-Ubuntu
+#### Ubuntu
 ```bash
 sudo apt-get install libomp-dev
 ```
