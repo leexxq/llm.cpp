@@ -44,10 +44,12 @@ int main(int argc, char **argv) {
 	size_t T = 64;
 	size_t genT = 64;
 	size_t val_num_batches = 5;
+	size_t iterations = 40;
 	app.add_option("-b,--batch",B,"training batchs");
 	app.add_option("-t,--seq_length",T,"train tokens length");
 	app.add_option("--gen_token",genT,"generative text's tokens length");
 	app.add_option("--val_sets_batch",val_num_batches,"validate sets's batch for test");
+	app.add_option("-i --iteration",iterations,"train iterations number");
 
 	CLI11_PARSE(app,argc,argv);
 
@@ -73,14 +75,14 @@ int main(int argc, char **argv) {
 
 
 	constexpr uint64_t rng_state = 1337;
-	std::uniform_real_distribution<float> dist(0, 1);
+	std::uniform_real_distribution<float> real_dist(0, 1);
 
 	std::mt19937 shuffle_rng{ rng_state };
 	Mati gen_tokens(B, T);
 
 	INFO_PRINTLN("---------------{}---------------", fmt::styled("[Train...]", fmt::fg(fmt::color::green) | fmt::emphasis::bold));
 
-	for (int step = 0; step <= 100; ++step) {
+	for (int step = 0; step <= iterations; ++step) {
 		if (step % 10 == 0) {
 			float val_loss = 0.0f;
 			val_loader.Reset();
@@ -97,7 +99,7 @@ int main(int argc, char **argv) {
 			INFO_PRINTLN("Generating:\n---");
 			for (int t = 1; t < genT; ++t) {
 				gpt2.Forward(gen_tokens);
-				float coin = dist(shuffle_rng);
+				float coin = real_dist(shuffle_rng);
 
 				int next_token = SampleMult(gpt2.probs[0].row(t - 1), coin);
 				gen_tokens(0, t) = next_token;
