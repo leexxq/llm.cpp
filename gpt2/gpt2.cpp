@@ -260,9 +260,9 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 	for (int b = 0; b < B_; ++b) {
 		probs[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
 	}
-	DEBUG_PRINTLN("probs[0] row 0 sum = {}", probs_[0].row(0).sum());
-	DEBUG_PRINTLN("probs forward sharp: ({} , {} , {})", probs_.size(), probs_[0].rows(), probs_[0].cols());
-	DEBUG_PRINTLN("probs[0]: \n{}", fmt::streamed(probs_[0].block<9, 9>(0, 0)));
+	DEBUG_PRINTLN("probs[0] row 0 sum = {}", probs[0].row(0).sum());
+	DEBUG_PRINTLN("probs forward sharp: ({} , {} , {})", probs.size(), probs[0].rows(), probs[0].cols());
+	DEBUG_PRINTLN("probs[0]: \n{}", fmt::streamed(probs[0].block<9, 9>(0, 0)));
 
 	this->mean_loss = targets.size() > 0 ? loss_.Forward(probs, targets) : -1.0f;
 	DEBUG_PRINTLN("losses 3 first:\n {}", fmt::streamed(loss_.losses[0].head(3)));
