@@ -23,7 +23,7 @@ make -j
 
 ## Faster training
 
-### OpenMP (optional):
+### OpenMP (optional)
 
 #### macOS
 ```bash
