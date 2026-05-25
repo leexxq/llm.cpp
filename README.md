@@ -25,7 +25,7 @@ make -j
 
 ### OpenMP (optional):
 
-##### macOS: 
+#### macOS
 ```bash
 brew install libomp
 ```
