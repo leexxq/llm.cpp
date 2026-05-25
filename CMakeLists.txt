@@ -93,7 +93,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         $<$<CONFIG:Release>:-ffast-math>
 	)
 
-	check_cxx_compiler_flag("-Wno-nan-infinity-disabled" COMPILER_SUPPORTS_NO_NAN_INF)
+	check_cxx_compiler_flag("-Wnan-infinity-disabled" COMPILER_SUPPORTS_NO_NAN_INF)
 	if(COMPILER_SUPPORTS_NO_NAN_INF)
 		target_compile_options(gpt2cpp PUBLIC $<$<CONFIG:Release>:-Wnan-infinity-disabled>)
 	endif()
