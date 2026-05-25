@@ -13,8 +13,14 @@
 
 ## Quick start
 
+
 ```bash
+# download train datasets
+bash ./download_data_pack.sh
+
+# build
 mkdir build
+cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j
 ./traingpt2

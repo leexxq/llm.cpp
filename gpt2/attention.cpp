@@ -1,8 +1,4 @@
 #include "attention.h"
-
-#include "global.h"
-
-#include <Eigen/Core>
 #include <cassert>
 #include <cstddef>
 
