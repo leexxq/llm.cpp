@@ -143,4 +143,12 @@ add_custom_command(TARGET traingpt2 POST_BUILD
     "$<TARGET_FILE_DIR:traingpt2>/data"
 )
 
-add_subdirectory(tests)
+option(ENABLE_TESTS "Build the tests (require GoogleTest)" OFF)
+
+if(ENABLE_TESTS)
+	message(STATUS "Testing is enabled. Adding tests")
+	add_subdirectory(tests)
+else()
+	message(STATUS "Testing is disabled. Skipping tests...")
+endif()
+
