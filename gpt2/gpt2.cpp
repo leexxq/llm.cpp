@@ -354,7 +354,7 @@ void ZeroGrad(Layer &l) {
 	ZeroGrad(l.fcproj);
 	ZeroGrad(l.qkv);
 	ZeroGrad(l.att_proj);
-	ZeroGrad(l.mm_logits);
+
 	SetZero(l.dl_residual2);
 	SetZero(l.dl_fcproj);
 	SetZero(l.dl_fch_gelu);

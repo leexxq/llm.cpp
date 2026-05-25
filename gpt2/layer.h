@@ -44,7 +44,6 @@ public:
 	MatMul fcproj;
 	MatMul qkv;
 	MatMul att_proj;
-	MatMul mm_logits;
 
 	GELU fch_gelu;
 	Attention attention;

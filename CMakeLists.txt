@@ -3,7 +3,7 @@ project(llm.cpp)
 
 # Default build type is release
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    message(STATUS "No build type selected, default to Debug")
+	message(STATUS "No build type selected, default to Release")
 	set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
 

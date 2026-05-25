@@ -37,8 +37,8 @@ TEST_F(TestCrossEntropy, forward1) {
 
 	float lossexp = (1.8042f + 1.6631f) / 2;
 
-	EXPECT_NEAR(cross_entropy.losses[0].sum() / 7, 1.8042f, 1e-3);
-	EXPECT_NEAR(cross_entropy.losses[1].sum() / 7, 1.6631f, 1e-3);
+	EXPECT_NEAR(cross_entropy.losses[0].sum() / 7, 1.8042f, 1e-3f);
+	EXPECT_NEAR(cross_entropy.losses[1].sum() / 7, 1.6631f, 1e-3f);
 
-	EXPECT_NEAR(loss, lossexp, 1e-3);
+	EXPECT_NEAR(loss, lossexp, 1e-3f);
 }

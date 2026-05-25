@@ -1,6 +1,7 @@
 #include "cross_entropy.h"
-
 #include "global.h"
+
+#include <cmath>
 
 void CrossEntropySoftmaxBackward(VecBTC &d_logits, const VecBTC &probs, const Mati &targets) {
 	size_t B = probs.size();
