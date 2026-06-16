@@ -16,7 +16,6 @@
 #include <filesystem>
 #include <fstream>
 #include <tuple>
-#include <vector>
 void GPT2Config::Print() const {
 	INFO_PRINTLN("---------------------------------");
 	INFO_PRINTLN("{}: {}", fmt::styled("max_seq_len", fmt::fg(fmt::color::blue)), max_seq_len);

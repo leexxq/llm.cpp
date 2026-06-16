@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <utility>
-#include <vector>
+
 
 struct GPT2Config {
 public:

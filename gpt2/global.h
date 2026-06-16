@@ -4,7 +4,6 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 
-#include <Eigen/Core>
 #include <Eigen/Dense>
 #include <cstddef>
 #include <tuple>

@@ -1,8 +1,9 @@
 #include "matmul.h"
 
+#include "cuda/matmul.cuh"
+
 #include "global.h"
 
-#include <Eigen/Core>
 #include <cassert>
 #include <cstddef>
 
@@ -10,23 +11,32 @@ VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight) {
 	return MatMulForward(inputs, weight, Vecf());
 }
 
+
+
 VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight, const Vecf &bias) {
 	size_t batchs = inputs.size();
 	size_t seq_len = inputs.front().rows();
 	size_t channels = inputs.front().cols();
 	size_t oc = weight.cols();
-	VecBTC output(batchs, Matf(seq_len, oc));
+	VecBTC outputs(batchs, Matf(seq_len, oc));
+
+	
 	for (int b = 0; b < batchs; ++b) {
 		const Matf &tc = inputs[b];
-		output[b].noalias() = tc * weight;
-		if (bias.size() != 0) {
+		outputs[b].noalias() = tc * weight;
+	}
+
+	if (bias.size() != 0) {
+		assert(bias.size() == oc);
+		for (int b = 0; b < batchs; ++b) {
 			for (int t = 0; t < seq_len; ++t) {
-				output[b].row(t) += bias.transpose();
+				outputs[b].row(t) += bias.transpose();
 			}
 		}
 	}
-	return output;
+	return outputs;
 }
+
 
 VecBTC MatMulBackward(const VecBTC &d_outputs, const VecBTC &inputs, const Matf &weight, const Vecf &bias, Matf &d_weight, Vecf &d_bias) {
 	auto [B, T, C] = GetShape(inputs);

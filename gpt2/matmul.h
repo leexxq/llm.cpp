@@ -1,9 +1,9 @@
 #pragma once
 #include "global.h"
 
-BACKWARD_NO_DISCARD
+FORWARD_NO_DISCARD
 VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight);
-BACKWARD_NO_DISCARD
+FORWARD_NO_DISCARD
 VecBTC MatMulForward(const VecBTC &inputs, const Matf &weight, const Vecf &bias);
 
 void MatMulBackward(const VecBTC &d_outputs, const VecBTC &inputs, const Matf &weight,
