@@ -35,6 +35,11 @@ TEST_F(TestMatMul, forward1) {
 
 	matmul.bias << -1.3034, -0.2438, 0.8006, -1.0919, 1.3184;
 
+
+	// no bias 
+	//    -0.066971369087696075    3.8809387683868408  -0.91520094871520996  -0.45415607094764709   -1.5421973466873169
+	//    1.2748736143112183   -2.2483763694763184  -0.73939210176467896   0.44717231392860413  -0.42002773284912109
+	//    2.4131371974945068   -3.3572332859039307   -1.1509698629379272   -1.5069030523300171    1.2909437417984009
 	VecBTC resexp{
 		Matf{
 				{ -1.3704, 3.6371, -0.1147, -1.5461, -0.2238 },
@@ -53,7 +58,7 @@ TEST_F(TestMatMul, forward1) {
 	ASSERT_TRUE(res.size() == inputs.size() && res.front().rows() == inputs.front().rows() && res.front().cols() == matmul.weight.cols());
 
 	for (int i = 0; i < 2; ++i) {
-		EXPECT_TRUE(res[i].isApprox(resexp[i], 0.001));
+		EXPECT_TRUE(res[i].isApprox(resexp[i], 0.001)) << res[i];
 	}
 }
 
@@ -103,14 +108,5 @@ TEST_F(TestMatMul, backward1) {
 	EXPECT_TRUE(matmul.d_weight.isApprox(d_weightexp, 0.001f));
 	EXPECT_TRUE(matmul.d_bias.isApprox(d_biasexp, 0.001f));
 }
-
-// TEST(TestMatMulGlobalFuction,forward){
-//
-// }
-//
-// TEST(TestMatMulGlobalFuction,backward){
-//
-// }
-
 
 
