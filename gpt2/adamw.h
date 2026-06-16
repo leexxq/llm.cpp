@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include <cstddef>
 struct AdamWParams {
 	float lr;
 	float beta1;
