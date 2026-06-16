@@ -50,3 +50,28 @@ make -j gpt2test
 ./tests/gpt2test
 ```
 
+## CUDA
+### Requirement
+1. CUDA version 12.4 or newer
+2. [CUDA GPU Compute Capability](https://developer.nvidia.com/cuda/gpus) 8.0 or newer
+
+### Install CUTLASS Submodule
+```bash
+git submodule update --init --recursive
+```
+
+### Enable CUDA
+```bash
+cd build
+cmake -DENABLE_CUDA=ON ..
+```
+
+### CUDA Implement Unit Tests
+```bash
+cd build
+cmake -DENABLE_TESTS=ON ..
+make -j gpt2test
+# run unit tests
+./test/gpt2test
+```
+
