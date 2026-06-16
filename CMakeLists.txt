@@ -1,5 +1,19 @@
 cmake_minimum_required(VERSION 3.14)
-project(llm.cpp)
+
+option(ENABLE_CUDA "Enable CUTLASS")
+if(ENABLE_CUDA)
+	project(llm.cpp LANGUAGES CXX CUDA)
+
+	find_package(CUDAToolkit REQUIRED)
+
+	set(CMAKE_CUDA_ARCHITECTURES 86)
+	set(CUDA_ARCHITECTURES 86)
+
+else()
+	project(llm.cpp)
+endif()
+
+
 
 # Default build type is release
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -8,7 +22,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -17,8 +31,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(Eigen3_DIR ./thirdparty/eigen3/share/eigen3/cmake/)
 find_package(Eigen3 3...5 REQUIRED NO_MODULE)
 
-add_executable(eigen3exp tests/eigen3_example.cpp)
-target_link_libraries(eigen3exp Eigen3::Eigen)
+# add_executable(eigen3exp tests/eigen3_example.cpp)
+# target_link_libraries(eigen3exp Eigen3::Eigen)
 
 #---------------
 
@@ -34,9 +48,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cli11_proj)
 
 
-add_executable(cli11exp tests/cli11_example.cpp)
+# add_executable(cli11exp tests/cli11_example.cpp)
 
-target_link_libraries(cli11exp CLI11::CLI11)
+# target_link_libraries(cli11exp CLI11::CLI11)
 
 #---------------
 
@@ -58,9 +72,35 @@ FetchContent_MakeAvailable(fmt)
 
 aux_source_directory(gpt2/ GPT2_SOURCES)
 
+
+
 add_library(gpt2cpp STATIC ${GPT2_SOURCES} )
 
-target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
+
+if(ENABLE_CUDA)
+	aux_source_directory(gpt2/cuda GPT2_CUDA_SOURCES)
+	add_library(gpt2cuda STATIC ${GPT2_CUDA_SOURCES} )
+
+	target_include_directories(gpt2cuda PRIVATE 
+		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/include
+		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
+		${CMAKE_CURRENT_SOURCE_DIR}/gpt2
+	)
+
+	target_link_libraries(gpt2cuda PRIVATE CUDA::cudart)
+
+	target_compile_options(gpt2cuda PRIVATE
+		$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+	)
+
+	target_link_libraries(gpt2cpp PUBLIC gpt2cuda PUBLIC Eigen3::Eigen PUBLIC fmt::fmt )
+
+else()
+	target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
+endif()
+
+
+
 
 
 # define Debug macro for debug
@@ -115,12 +155,14 @@ endif()
 
 
 
+
 #-----------------
 
 
 add_executable(traingpt2 train.cpp)
 
 target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
+
 
 option(ENABLE_PROFILER "For User who need profiler" OFF)
 
