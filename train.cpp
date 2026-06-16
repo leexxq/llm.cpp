@@ -10,7 +10,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
-#include <vector>
 void SafePrint(const std::string &rep) {
 	if (rep.empty()) {
 		return;
