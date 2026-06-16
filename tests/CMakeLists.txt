@@ -24,16 +24,16 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 aux_source_directory(gpt2/ TEST_GPT2_SRC)
+if(ENABLE_CUDA)
+aux_source_directory(gpt2/cuda TEST_GPT2_SRC)
+endif()
 
-add_executable(
-	gtestexp
-	EXCLUDE_FROM_ALL
-	gtest_example.cpp
-)
-target_link_libraries(
-	gtestexp
-	PRIVATE GTest::gtest_main
-)
+message(STATUS "========== TEST_GPT2_SRC ==========")
+foreach(file ${TEST_GPT2_SRC})
+  message(STATUS "  ${file}")
+endforeach()
+message(STATUS "==================================")
+
 
 add_executable(gpt2test EXCLUDE_FROM_ALL ${TEST_GPT2_SRC})
 
@@ -49,7 +49,6 @@ target_link_libraries(
 
 include(GoogleTest)
 
-gtest_discover_tests(gtestexp)
 gtest_discover_tests(gpt2test)
 
 #---------------
