@@ -26,6 +26,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(ENABLE_CUDA)
+	set(CMAKE_CUDA_STANDARD 17)
+	set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+endif()
+
+
 # Eigen3 install
 
 set(Eigen3_DIR ./thirdparty/eigen3/share/eigen3/cmake/)
@@ -87,19 +94,14 @@ if(ENABLE_CUDA)
 		${CMAKE_CURRENT_SOURCE_DIR}/gpt2
 	)
 
-	target_link_libraries(gpt2cuda PRIVATE CUDA::cudart)
+	target_link_libraries(gpt2cuda PRIVATE CUDA::cudart PUBLIC fmt::fmt)
 
 	target_compile_options(gpt2cuda PRIVATE
 		$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
 	)
-
-	target_link_libraries(gpt2cpp PUBLIC gpt2cuda PUBLIC Eigen3::Eigen PUBLIC fmt::fmt )
-
-else()
-	target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
 endif()
 
-
+target_link_libraries(gpt2cpp PUBLIC Eigen3::Eigen PUBLIC fmt::fmt)
 
 
 
@@ -159,9 +161,14 @@ endif()
 #-----------------
 
 
-add_executable(traingpt2 train.cpp)
+add_executable(traingpt2 train.cpp  utils/dataloader.cpp utils/tokenizer.cpp)
 
 target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
+
+if(ENABLE_CUDA)
+add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp)
+target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda)
+endif()
 
 
 option(ENABLE_PROFILER "For User who need profiler" OFF)

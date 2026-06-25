@@ -3,6 +3,9 @@
 #include "cuda/global.cuh"
 #include "cutlass/util/device_memory.h"
 
+namespace gpt2cuda{
+namespace kernel {
+
 __global__ void AdamWKernel(
 float* data ,float* grad_data, float *m ,float * v ,  size_t size, 
         float lr,float beta1,float beta2,float eps,float weight_decay,int t
@@ -35,8 +38,11 @@ void AdamWCuda(float* data ,float* grad_data, float *m ,float * v ,  size_t size
 
 }
 
+}
+
+
 using DAlloc = cutlass::device_memory::allocation<float>;
-void gpt2cuda::AdamW(float* data, float * grad_data, float* m, float* v, size_t size, 
+void AdamW(float* data, float * grad_data, float* m, float* v, size_t size, 
         float lr,float beta1,float beta2,float eps,float weight_decay,int t){
     DAlloc data_d(size);
     DAlloc grad_data_d(size);
@@ -47,9 +53,11 @@ void gpt2cuda::AdamW(float* data, float * grad_data, float* m, float* v, size_t 
     m_d.copy_from_host(m);
     v_d.copy_from_host(v);
 
-    AdamWCuda(data_d.get(), grad_data_d.get(), m_d.get(), v_d.get(), size, lr, beta1, beta2, eps, weight_decay, t);
+    kernel::AdamWCuda(data_d.get(), grad_data_d.get(), m_d.get(), v_d.get(), size, lr, beta1, beta2, eps, weight_decay, t);
 
     data_d.copy_to_host(data);
     m_d.copy_to_host(m);
     v_d.copy_to_host(v);
+}
+
 }

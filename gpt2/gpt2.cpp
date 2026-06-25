@@ -1,4 +1,5 @@
 #include "gpt2.h"
+#include "log.h"
 
 #include "adamw.h"
 #include "encoder.h"
@@ -47,7 +48,7 @@ void GPT2::Init(size_t B, size_t T) {
 		d_logits_ = makeZero(B, T, config_.padded_vocab_size);
 		d_lnf_ = makeZero(B, T, config_.channels);
 		d_residual3_ = makeZero(config_.num_layers, B, T, config_.channels);
-		d_encoded = makeZero(B, T, config_.channels);
+		d_encoded_ = makeZero(B, T, config_.channels);
 	}
 
 	//params and grads data
@@ -139,8 +140,8 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
 
 	Init(B_, T_);
 
-	//eigen default memory seq is column-major
-	//but the readed data is row-major
+	//Eigen default memory seq is column-major
+	//but the data to read is row-major
 	{
 		Vecf tmp_row(config_.channels);
 		for (int i = 0; i < config_.padded_vocab_size; ++i) {
@@ -168,7 +169,9 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
 		// DEBUG_PRINTLN("load success layer {} ln1b : \n{}", i + 1, fmt::streamed(layers_[i].layernorm1.beta.segment(0, 9)));
 	}
 
-	//due to eigen matrix default column-major,so does'nt necessary to convert ;
+	// due to eigen matrix default column-major 
+	// and our matrix's shape is (C,OC) ,but the file to read is row-major and shape is (OC,C)
+	// so does'nt necessary to convert ;
 	for (int i = 0; i < config_.num_layers; ++i) {
 		auto qkvw = layers_[i].qkv.weight.data();
 		f.read(reinterpret_cast<char *>(qkvw), sizeof(float) * config_.channels * 3 * config_.channels);
@@ -226,15 +229,16 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
 	DEBUG_PRINTLN("load success lnfb: \n{}", fmt::streamed(layernormf_.beta.tail(3)));
 }
 
-void GPT2::Forward(Mati &inputs, Mati &targets) {
-	size_t B = inputs.rows(), T = inputs.cols();
-	this->inputs_ = inputs.cast<float>().eval();
-	this->targets_ = targets.eval();
-	assert(B_ == B);
-	assert(T_ == T);
+void GPT2::Forward(StdVec<int> &inputs, StdVec<int> &targets) {
+	using MapRow = Eigen::Map<Eigen::Matrix<int,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>>;
+	assert(B_ * T_ == inputs.size());
+	this->inputs_ = MapRow(inputs.data(),B_,T_);
+	if(!targets.empty()){
+		this->targets_ = MapRow(targets.data(),B_,T_); 
+	}
 
 	DEBUG_PRINTLN("---------------{}---------------", fmt::styled("[Forward]", fmt::fg(fmt::color::green) | fmt::emphasis::bold));
-	encoded_ = encoder_.Forward(this->inputs_);
+	encoded_ = encoder_.Forward(inputs_);
 
 	DEBUG_PRINTLN("encoder forward sharp: ({} ,{} , {})", encoded_.size(), encoded_[1].rows(), encoded_[0].cols());
 	DEBUG_PRINTLN("enc[0] : \n{}", fmt::streamed(encoded_[0].block<2, 2>(0, 0)));
@@ -256,7 +260,7 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 	DEBUG_PRINTLN("logits forward sharp: ({} , {} , {})", logits_.size(), logits_[0].rows(), logits_[0].cols());
 	DEBUG_PRINTLN("logits[0]: \n{}", fmt::streamed(logits_[0].block<2, 2>(0, 0)));
 
-	probs = makeVecBTV(B,T,config_.vocab_size);
+	probs = makeVecBTV(B_,T_,config_.vocab_size);
 	assert(logits_.front().cols() >= config_.vocab_size);
 	for (int b = 0; b < B_; ++b) {
 		probs[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
@@ -265,7 +269,8 @@ void GPT2::Forward(Mati &inputs, Mati &targets) {
 	DEBUG_PRINTLN("probs forward sharp: ({} , {} , {})", probs.size(), probs[0].rows(), probs[0].cols());
 	DEBUG_PRINTLN("probs[0]: \n{}", fmt::streamed(probs[0].block<9, 9>(0, 0)));
 
-	this->mean_loss = targets.size() > 0 ? loss_.Forward(probs, targets) : -1.0f;
+	this->mean_loss = targets_.size() > 0 ? loss_.Forward(probs, targets_) : -1.0f;
+
 	DEBUG_PRINTLN("losses 3 first:\n {}", fmt::streamed(loss_.losses[0].head(3)));
 
 	DEBUG_PRINTLN("{} : {}", fmt::styled("mean loss", fmt::fg(fmt::color::dark_red)), mean_loss);
@@ -299,12 +304,12 @@ void GPT2::Backward() {
 	}
 
 	DEBUG_PRINTLN("--------------{}:{}--------------------", fmt::styled("Layer", fmt::fg(fmt::color::green) | fmt::emphasis::bold), 1);
-	d_encoded += layers_.front().Backward(d_residual3_[0], encoded_);
-	std::tie(s_b, s_t, s_c) = GetShape(d_encoded);
+	d_encoded_ += layers_.front().Backward(d_residual3_[0], encoded_);
+	std::tie(s_b, s_t, s_c) = GetShape(d_encoded_);
 	DEBUG_PRINTLN("d_encoded shape ({},{},{})", s_b, s_t, s_c);
-	DEBUG_PRINTLN("d_encoded last[0]: \n{}", fmt::streamed(d_encoded[0].block<2, 2>(0, 0)));
+	DEBUG_PRINTLN("d_encoded last[0]: \n{}", fmt::streamed(d_encoded_[0].block<2, 2>(0, 0)));
 
-	encoder_.Backward(d_encoded, this->inputs_);
+	encoder_.Backward(d_encoded_, this->inputs_);
 	DEBUG_PRINTLN("d_wte: \n{}", fmt::streamed(encoder_.d_wte.block<2, 2>(0, 0)));
 	DEBUG_PRINTLN("d_wpe: \n{}", fmt::streamed(encoder_.d_wpe.block<2, 2>(0, 0)));
 
@@ -376,7 +381,7 @@ void GPT2::ZeroGrad() {
 	::SetZero(d_logits_);
 	::SetZero(d_lnf_);
 	::SetZero(d_residual3_);
-	::SetZero(d_encoded);
+	::SetZero(d_encoded_);
 	::ZeroGrad(encoder_);
 	::ZeroGrad(layers_);
 	::ZeroGrad(layernormf_);

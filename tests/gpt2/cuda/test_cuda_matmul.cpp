@@ -51,7 +51,7 @@ TEST(CudaMatMul, forward1){
 	};
 
     StdVec<float> outputs(2*3*5,0);
-    gpt2cuda::BatchMatmulForward(outputs.data(),inputs.data(),weight.data(),bias.data(),2,3,4,5);
+    gpt2cuda::BatchMatmulNNForward(outputs.data(),inputs.data(),weight.data(),bias.data(),2,3,4,5);
 
     Eigen::Map<MatRow> map_output_1(outputs.data(),3,5);
     Eigen::Map<MatRow> map_output_2(outputs.data() + 3 * 5,3,5);
@@ -103,7 +103,7 @@ TEST(CudaMatMul, backward1){
 	StdVec<float> d_weight(4*5,0);
 	StdVec<float> d_bias(5,0);
 
-    gpt2cuda::BatchMatmulBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
+    gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
 
     Eigen::Map<MatRow> map_d_inputs_0(d_inputs.data(),3,4);
     Eigen::Map<MatRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
@@ -192,7 +192,7 @@ TEST(CudaMatMul,backward2){
 
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-		gpt2cuda::BatchMatmulBackward(d_inputs_vec.data(), d_weight_vec.data(), d_bias_vec.data(), d_outputs_vec.data(), inputs_vec.data(),weight_vec.data(), B,T,C,Oc);
+		gpt2cuda::BatchMatmulNNBackward(d_inputs_vec.data(), d_weight_vec.data(), d_bias_vec.data(), d_outputs_vec.data(), inputs_vec.data(),weight_vec.data(), B,T,C,Oc);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;

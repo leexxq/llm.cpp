@@ -2,7 +2,7 @@
 
 #include "global.h"
 
-VecBTC Encoder::Forward(const Matf &input) const {
+VecBTC Encoder::Forward(const Mati &input) const {
 	size_t batchs = input.rows();
 	size_t seq_len = input.cols();
 	size_t channels = wte.cols();
@@ -18,7 +18,7 @@ VecBTC Encoder::Forward(const Matf &input) const {
 	return outputs;
 }
 
-void Encoder::Backward(const VecBTC &d_outputs, const Matf &input) {
+void Encoder::Backward(const VecBTC &d_outputs, const Mati &input) {
 	size_t batchs = input.rows();
 	size_t seq_len = input.cols();
 	size_t channels = wte.cols();

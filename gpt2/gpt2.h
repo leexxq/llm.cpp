@@ -46,7 +46,7 @@ private:
 	// other run state configuration
 	// size_t batch_size; // the batch size (B) of current forward pass
 	// size_t seq_len; // the sequence length (T) of current forward pass
-	Matf inputs_; // the input tokens for the current forward pass
+	Mati inputs_; // the input tokens for the current forward pass
 	Mati targets_; // the target tokens for the current forward pass
 
 	Encoder encoder_;
@@ -66,7 +66,7 @@ private:
 	VecBTVp d_logits_;
 	VecBTC d_lnf_;
 	VecLBTC d_residual3_;
-	VecBTC d_encoded;
+	VecBTC d_encoded_;
 
 	std::filesystem::path checkpoint_path_;
 
@@ -83,9 +83,9 @@ public:
 	GPT2(const std::filesystem::path &path, size_t B, size_t T);
 	GPT2(const GPT2 &gpt2) = delete;
 	GPT2(const GPT2 &&gpt2) = delete;
-	void Forward(Mati &, Mati &);
-	void Forward(Mati &inputs) {
-		Mati targets;
+	void Forward(StdVec<int> &, StdVec<int> &);
+	void Forward(StdVec<int> &inputs) {
+		StdVec<int> targets;
 		Forward(inputs, targets);
 	}
 	void Backward();

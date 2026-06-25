@@ -15,8 +15,8 @@ public:
 												d_wte(Matf::Zero(Vp, C)),
 												d_wpe(Matf::Zero(maxT, C)) {}
 	FORWARD_NO_DISCARD
-	VecBTC Forward(const Matf &input) const;
-	void Backward(const VecBTC &d_output, const Matf &input);
+	VecBTC Forward(const Mati &input) const;
+	void Backward(const VecBTC &d_output, const Mati &input);
 
 	MatVC d_wte;
 	MatTC d_wpe;

@@ -1,5 +1,4 @@
 #pragma once
-#include "global.h"
 
 
 
@@ -12,6 +11,8 @@
 namespace fs = std::filesystem;
 
 class DataLoader {
+	template<class T>
+	using StdVec = std::vector<T>;
 private:
 	constexpr static int kHeadSize = 256;
 	// variables related to distributed training
@@ -45,12 +46,11 @@ private:
 
 public:
 	size_t num_tokens; // total number of tokens
-	Mati inputs; // input tokens into transformer
-	Mati targets; // target tokens for the transformer
 
 private:
 	int64_t LoadShard(int shard_index);
 	void PrepareIntraShardIndices();
+	void ReadTokenfileToBuffer();
 	void Advance();
 
 public:
@@ -63,8 +63,8 @@ public:
 			bool should_shuffle);
 	~DataLoader() {}
 
-	void LoadBatch();
-	void NextBatch();
+	void LoadBatch(StdVec<int>& inputs,StdVec<int>& targets);
+	void NextBatch(StdVec<int>& inputs,StdVec<int>& targets);
 	void Resume(size_t shard_idx, size_t sample_idx);
 	void Reset();
 };

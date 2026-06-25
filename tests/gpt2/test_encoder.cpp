@@ -25,7 +25,7 @@ protected:
 };
 
 TEST_F(TestEncoder, forward) {
-	Matf input(2, 3);
+	Mati input(2, 3);
 	input << 0, 2, 3,
 			1, 3, 2;
 

@@ -1,4 +1,15 @@
 #include "attention.cuh"
-void gpt2cuda::BatchAttentionForward(float * outputs , float const * inputs,int B,int T ,int C3){
+namespace gpt2cuda {
+namespace kernel {
+
+}
+
+void BatchAttentionForward(float * outputs , float const * inputs,int B,int T ,int C3,int NH){
+
+}
+
+void BatchAttentionBackward(float * d_inputs,float const * d_outputs,float const * inputs,int B,int T ,int C3,int NH){
+
+}
 
 }

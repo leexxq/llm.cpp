@@ -1,7 +1,8 @@
 #include "CLI/CLI.hpp"
+#include "gpt2/cuda/gpt2cuda.h"
 #include "utils/dataloader.h"
-#include "gpt2/gpt2.h"
 #include "utils/tokenizer.h"
+#include "gpt2/log.h"
 
 #include <cassert>
 #include <chrono>
@@ -9,7 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
-#include "gpt2/log.h"
+using namespace gpt2cuda;
 
 void SafePrint(const std::string &rep) {
 	if (rep.empty()) {
@@ -21,16 +22,8 @@ void SafePrint(const std::string &rep) {
 	INFO_PRINT("{}", rep);
 }
 
-int SampleMult(const Vecf &probs, float coin) {
-	float cdf = 0.f;
-	for (int i = 0; i < probs.size(); ++i) {
-		cdf += probs[i];
-		if (coin < cdf) {
-			return i;
-		}
-	}
-	return probs.size() - 1;
-}
+
+
 
 
 int main(int argc, char **argv) {
@@ -64,7 +57,7 @@ int main(int argc, char **argv) {
 	fs::path checkpoint_path{ "data/gpt2_124M.bin" };
 	fs::path tokenizer_path{ "data/gpt2_tokenizer.bin" };
 
-	GPT2 gpt2{ checkpoint_path, B, T };
+	gpt2cuda::GPT2 gpt2{ checkpoint_path, B, T };
 	DataLoader train_loader{ train_tokens, B, T, 0, 1, true };
 	DataLoader val_loader{ val_tokens, B, T, 0, 1, false };
 
@@ -78,7 +71,7 @@ int main(int argc, char **argv) {
 	std::uniform_real_distribution<float> real_dist(0, 1);
 
 	std::mt19937 shuffle_rng{ rng_state };
-	StdVec<int> gen_tokens(B*T);
+	gpt2cuda::StdVec<int> gen_tokens(B*T);
 
 	INFO_PRINTLN("---------------{}---------------", fmt::styled("[Train...]", fmt::fg(fmt::color::green) | fmt::emphasis::bold));
 
@@ -92,7 +85,7 @@ int main(int argc, char **argv) {
 			for (int i = 0; i < val_num_batches; ++i) {
 				val_loader.NextBatch(inputs,targets);
 				gpt2.Forward(inputs,targets);
-				val_loss += gpt2.mean_loss;
+				val_loss += gpt2.mean_loss.value();
 			}
 			val_loss /= val_num_batches;
 			INFO_PRINTLN("val loss {}", val_loss);
@@ -103,8 +96,8 @@ int main(int argc, char **argv) {
 			for (int t = 1; t < genT; ++t) {
 				gpt2.Forward(gen_tokens);
 				float coin = real_dist(shuffle_rng);
+				int next_token = gpt2.Sample(0,t-1,coin,gpt2cuda::GPT2::SampleMethod::Mult);
 
-				int next_token = SampleMult(gpt2.probs[0].row(t - 1), coin);
 				gen_tokens[t] = next_token;
 				if (tokenizer) {
 					auto rep = tokenizer.decode(next_token);
@@ -130,7 +123,7 @@ int main(int argc, char **argv) {
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 		auto duration_f = std::chrono::duration_cast<std::chrono::milliseconds>(end_f - start_f);
 		auto duration_b = std::chrono::duration_cast<std::chrono::milliseconds>(end_b - start_b);
-		INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms", step, gpt2.mean_loss, duration.count(), duration_f.count(), duration_b.count());
+		INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms", step, gpt2.mean_loss.value(), duration.count(), duration_f.count(), duration_b.count());
 	}
 
 	return 0;

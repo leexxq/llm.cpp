@@ -1,5 +1,5 @@
 #include "layer.h"
-
+#include "log.h"
 #include "global.h"
 
 #include <fmt/core.h>

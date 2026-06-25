@@ -1,11 +1,10 @@
 #include "tokenizer.h"
-
-#include "fmt/ostream.h"
-#include "global.h"
+#include "log.h"
 
 #include <cassert>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 Tokenizer::Tokenizer(const std::filesystem::path &checkpoint_path) {
 	std::ifstream f{ checkpoint_path, std::ios::binary };
@@ -46,10 +45,10 @@ Tokenizer::Tokenizer(const std::filesystem::path &checkpoint_path) {
 	init_ok_ = true;
 }
 
-StdVec<int> Tokenizer::encode(const std::string &str) {
-	return StdVec<int>(str.size());
+std::vector<int> Tokenizer::encode(const std::string &str) {
+	return std::vector<int>(str.size());
 }
-std::string Tokenizer::decode(const StdVec<int> &codes) {
+std::string Tokenizer::decode(const std::vector<int> &codes) {
 	std::string res;
 	for (auto &code : codes) {
 		if (code < token_table_.size()) {
@@ -62,6 +61,6 @@ std::string Tokenizer::decode(const StdVec<int> &codes) {
 }
 
 std::string Tokenizer::decode(int code) {
-	StdVec<int> codes(1, code);
+	std::vector<int> codes(1, code);
 	return Tokenizer::decode(codes);
 }

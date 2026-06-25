@@ -2,7 +2,7 @@ CompileFlags:
   Compiler: /usr/local/cuda/bin/nvcc
   Add:
     - --cuda-path=/usr/local/cuda
-    - --cuda-gpu-arch=sm_90a
+    - --cuda-gpu-arch=sm_80
     - -I/usr/local/cuda/include
     - "-xcuda"
 # report all errors

@@ -25,7 +25,7 @@ enable_testing()
 
 aux_source_directory(gpt2/ TEST_GPT2_SRC)
 if(ENABLE_CUDA)
-aux_source_directory(gpt2/cuda TEST_GPT2_SRC)
+	aux_source_directory(gpt2/cuda TEST_GPT2_CUDA_SRC)
 endif()
 
 message(STATUS "========== TEST_GPT2_SRC ==========")
@@ -46,6 +46,20 @@ target_link_libraries(
 	PRIVATE Eigen3::Eigen
 	PRIVATE CLI11::CLI11
 )
+
+if(ENABLE_CUDA)
+	add_executable(gpt2cudatest EXCLUDE_FROM_ALL ${TEST_GPT2_CUDA_SRC})
+	target_link_libraries(
+		gpt2cudatest
+		PRIVATE gpt2cpp
+		PRIVATE gpt2cuda
+		PRIVATE GTest::gtest_main
+		PRIVATE Eigen3::Eigen
+		PRIVATE CLI11::CLI11
+	)
+endif()
+
+
 
 include(GoogleTest)
 

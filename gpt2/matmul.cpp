@@ -1,6 +1,5 @@
 #include "matmul.h"
 
-#include "cuda/matmul.cuh"
 
 #include "global.h"
 

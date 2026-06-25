@@ -1,11 +1,8 @@
 #include "dataloader.h"
 
-#include "global.h"
 #include "rand.h"
+#include "log.h"
 
-#include <fmt/ostream.h>
-
-#include <Eigen/Core>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -59,8 +56,6 @@ DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 	}
 
 	buffer_.resize(B * T + 1);
-	inputs = Mati::Zero(B, T);
-	targets = Mati::Zero(B, T);
 	num_tokens = ntok_total;
 	Reset();
 }
@@ -119,40 +114,73 @@ int64_t DataLoader::LoadShard(int shard_index) {
 	return ntok;
 }
 
-void DataLoader::NextBatch() {
+// void DataLoader::NextBatch( Mati& inputs,  Mati& targets) {
+// 	if (current_sample_idx_ >= shard_num_samples_) {
+// 		Advance();
+// 	}
+
+// 	LoadBatch(inputs,targets);
+// 	++current_sample_idx_;
+// }
+
+void DataLoader::NextBatch(StdVec<int>& inputs,StdVec<int>& targets) {
 	if (current_sample_idx_ >= shard_num_samples_) {
 		Advance();
 	}
 
-	LoadBatch();
+	LoadBatch(inputs,targets);
 	++current_sample_idx_;
 }
 
-void DataLoader::LoadBatch() {
+void DataLoader::ReadTokenfileToBuffer(){
 	assert(!should_shuffle_ || (should_shuffle_ && !intra_shard_indices_.empty()));
 	assert(current_sample_idx_ < shard_num_samples_);
 	size_t idx = should_shuffle_ ? intra_shard_indices_[current_sample_idx_] : current_sample_idx_;
 	size_t global_batch_offset_bytes = idx * total_batch_size_bytes_;
 	int64_t current_offset = header_bytes_ + global_batch_offset_bytes + local_batch_offset_bytes_;
 
-	size_t B = B_;
-	size_t T = T_;
 	// read B*T+1 uint16_t tokens from the file into buffer
 	tokens_file_.seekg(current_offset, std::ios::beg);
 	tokens_file_.read(reinterpret_cast<char *>(buffer_.data()), buffer_.size() * sizeof(uint16_t));
+}
+
+void DataLoader::LoadBatch(StdVec<int>& inputs,StdVec<int>& targets) {
+	ReadTokenfileToBuffer();
+	size_t B = B_;
+	size_t T = T_;
+	assert(B*T == inputs.size());
 	// decode the buffer into inputs and targets (cast to int)
 	for (int b = 0; b < B; ++b) {
 		for (int t = 0; t < T; ++t) {
 			int i = t + b * T;
-			inputs(b, t) = static_cast<int>(buffer_[i]);
-			targets(b, t) = static_cast<int>(buffer_[i + 1]);
+			inputs[i] = static_cast<int>(buffer_[i]);
+			targets[i] = static_cast<int>(buffer_[i + 1]);
 		}
 	}
 	if (B > 1 && T > 1) {
-		DEBUG_PRINTLN("inputs: \n{}...", fmt::streamed(inputs.block<2, 2>(0, 0)));
-		DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
+		//map to eigen
+		// DEBUG_PRINTLN("inputs: \n{}...", fmt::streamed(inputs.block<2, 2>(0, 0)));
+		// DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
 	}
 }
+
+// void DataLoader::LoadBatch( Mati& inputs,  Mati& targets) {
+// 	ReadTokenfileToBuffer();
+// 	size_t B = B_;
+// 	size_t T = T_;
+// 	// decode the buffer into inputs and targets (cast to int)
+// 	for (int b = 0; b < B; ++b) {
+// 		for (int t = 0; t < T; ++t) {
+// 			int i = t + b * T;
+// 			inputs(b, t) = static_cast<int>(buffer_[i]);
+// 			targets(b, t) = static_cast<int>(buffer_[i + 1]);
+// 		}
+// 	}
+// 	if (B > 1 && T > 1) {
+// 		DEBUG_PRINTLN("inputs: \n{}...", fmt::streamed(inputs.block<2, 2>(0, 0)));
+// 		DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
+// 	}
+// }
 
 void DataLoader::Advance() {
 	if (current_shard_idx_ == shard_paths_.size() - 1) {

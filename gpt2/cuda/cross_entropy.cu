@@ -2,41 +2,75 @@
 #include "cuda/global.cuh"
 #include "cutlass/util/device_memory.h"
 
-__global__ void CrossEntropySoftmaxKernel(float * d_logits, float const * probs,int const * targets,int B,int T,int C,float scale){
+namespace gpt2cuda {
+namespace kernel {
+    __global__ void CrossEntropySoftmaxBackwardKernel(float * d_logits, float const * probs,int const * targets,int ld ,int length,int stride ,float scale){
 
-    const int idx = threadIdx.x + blockDim.x * blockIdx.x;
+        const int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-    if(idx < B*T*C){
-        bool pred = targets[idx / C] == (idx % C);
-        d_logits[idx] += probs[idx];
+        if(idx < length){
+            bool pred = targets[idx / stride] == (idx % stride);
+            const int real_idx = (idx/stride)*ld + idx%stride;
+            d_logits[real_idx] += probs[real_idx];
 
-        if(pred){
-            d_logits[idx] -= 1;
+            if(pred){
+                d_logits[real_idx] -= 1;
+            }
+            d_logits[real_idx] *= scale;
         }
-        d_logits[idx] /= scale;
+
+    }
+    __global__ void CrossEntropyForwardKernel(float* losses, float const * inputs, int const * targets,int length,int stride){
+
+        const int idx = threadIdx.x + blockDim.x * blockIdx.x;
+        if(idx < length){
+            losses[idx] = -log(inputs[idx * stride + targets[idx]]);
+        }
     }
 
+    template<int threads=256>
+    void CrossEntropySoftmaxBackwardCUDA(float * d_logits, float const * probs,int const * targets,int ld , int length,int stride ,float scale){
+        CrossEntropySoftmaxBackwardKernel<<<(length + threads - 1 )/ threads,threads>>>(d_logits, probs, targets, ld,length,stride , scale);
+        CUDA_CHECK_LAST();
+    }
+
+    template<int threads=256>
+    void CrossEntropyForwardCUDA(float* losses ,  float const * inputs, int const * targets,int length,int stride){
+        CrossEntropyForwardKernel<<<(length + threads - 1 )/ threads,threads>>>(losses,inputs ,targets, length,stride);
+        CUDA_CHECK_LAST();
+    }
 }
 
-template<int threads=256>
-void CrossEntropySoftmaxCuda(float * d_logits, float const * probs,int const * targets,int B,int T,int C){
+    using DAllocf = cutlass::device_memory::allocation<float>;
+    using DAlloci = cutlass::device_memory::allocation<int>;
+    void BatchCrossEntropySoftmaxBackward(float * d_logits, float const * probs,int const * targets,int B,int T,int V,int Vp,float scale){
 
-    CrossEntropySoftmaxKernel<<<(B*T*C + threads - 1 )/ threads,threads>>>(d_logits, probs, targets, B, T, C, B*T);
-    CUDA_CHECK_LAST();
-}
+        DAllocf d_logits_d(B*T*V);
+        DAllocf probs_d(B*T*V);
+        cutlass::device_memory::allocation<int> targets_d(B*T);
 
-using DAlloc = cutlass::device_memory::allocation<float>;
-void CrossEntropySoftmaxBackward(float * d_logits, float const * probs,int const * targets,int B,int T,int C){
+        d_logits_d.copy_from_host(d_logits);
+        probs_d.copy_from_host(probs);
+        targets_d.copy_from_host(targets);
 
-    DAlloc d_logits_d;
-    DAlloc probs_d;
-    cutlass::device_memory::allocation<int> targets_d;
+        kernel::CrossEntropySoftmaxBackwardCUDA(d_logits_d.get(), probs_d.get(), targets_d.get(), Vp,B*T*V,V,scale);
 
-    d_logits_d.copy_from_host(d_logits);
-    probs_d.copy_from_host(probs);
-    targets_d.copy_from_host(targets);
+        d_logits_d.copy_to_host(d_logits);
+    }
 
-    CrossEntropySoftmaxCuda(d_logits_d.get(), probs_d.get(), targets_d.get(), B,T,C);
+    void BatchCrossEntropyForward(float* losses, float const * inputs, int const * targets,int B,int T,int C){
+        DAllocf inputs_d(B*T*C);
+        DAllocf losses_d(B*T);
+        DAlloci targets_d(B*T);
 
-    d_logits_d.copy_to_host(d_logits);
+        inputs_d.copy_from_host(inputs);
+        targets_d.copy_from_host(targets);
+
+        kernel::CrossEntropyForwardCUDA(losses_d.get(), inputs_d.get(), targets_d.get(), B*T, C);
+
+        losses_d.copy_to_host(losses);
+
+    }
+
+
 }

@@ -1,6 +1,8 @@
-#include "global.h"
 #include <filesystem>
+#include <vector>
 class Tokenizer {
+	template<class T>
+	using StdVec = std::vector<T>;
 private:
 	StdVec<std::string> token_table_;
 	bool init_ok_;

@@ -1,6 +1,8 @@
 #pragma once
-#include "global.h"
 #include <random>
+#include <vector>
+template<class T>
+using StdVec = std::vector<T>;
 template <class T>
 void InitIdentityPermutation(StdVec<T> &data) {
 	std::iota(data.begin(), data.end(), 0);
