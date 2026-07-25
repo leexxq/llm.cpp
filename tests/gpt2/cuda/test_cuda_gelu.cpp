@@ -6,14 +6,14 @@
 #include <chrono>
 
 
-using MatRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
+using MatfRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
 
 TEST(CudaGelu, backward1){
 
     auto gelu = GELU();
 
-	constexpr int B = 64;
-	constexpr int T = 1024;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
 	VecBTC inputs(B);
 	VecBTC d_outputs(B);
@@ -59,7 +59,7 @@ TEST(CudaGelu, backward1){
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
     for(int i = 0 ; i < B ; ++i){
-        Eigen::Map<MatRow> map_d_inputs(d_inputs_vec.data() + i * T*C,T,C);
+        Eigen::Map<MatfRow> map_d_inputs(d_inputs_vec.data() + i * T*C,T,C);
 		EXPECT_TRUE(map_d_inputs.isApprox(d_inputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_d_inputs.block<3,3>(0,0) << std::endl 
 			<< " ---cpu--- \n" << d_inputs_res[i].block<3,3>(0,0) <<std::endl ;

@@ -9,6 +9,7 @@
 #include "adamw.cuh"
 #include <cassert>
 #include <iostream>
+#include <numeric>
 #include <optional>
 #include <fstream>
 namespace gpt2cuda{
@@ -250,15 +251,11 @@ void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets){
     if(targets_.size() > 0 ) {
         BatchCrossEntropyForward(losses.data(),probs_.data(),targets_.data(),B,T,Vp);
         mean_loss = std::optional<float>(0.0f);
-        for(auto & v : losses){
-            mean_loss.value() += v;
-        }
+        std::accumulate(losses.begin(),losses.end(),mean_loss.value());
         mean_loss.value() /= B*T;
     }else {
         mean_loss = std::nullopt;
     }
-
-
 }
 
 
@@ -280,7 +277,7 @@ void GPT2::Backward(){
 
     layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_);
 
-    BatchEncodeBackward(dwte_.data(),dwpe_.data(),dencoded_.data(),inputs_.data(),B,T,C,Vp,MaxT);
+    BatchEncoderBackward(dwte_.data(),dwpe_.data(),dencoded_.data(),inputs_.data(),B,T,C,Vp,MaxT);
 
 }
 

@@ -2,7 +2,6 @@
 
 
 #include "global.cuh"
-#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <utility>
@@ -10,6 +9,7 @@
 
 namespace gpt2cuda {
 
+    using size_t = std::size_t;
     struct GPT2Config {
     public:
         size_t max_seq_len; // max sequence length, e.g. 1024

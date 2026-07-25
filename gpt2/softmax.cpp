@@ -2,7 +2,7 @@
 #include "global.h"
 
 
-void softmax(const Matf &mat,Matf& output) {
+void Softmax(const Matf &mat,Matf& output) {
 	size_t cols = mat.cols();
 	size_t rows = mat.rows();
 	for (int r = 0; r < rows; ++r) {
@@ -15,7 +15,7 @@ void softmax(const Matf &mat,Matf& output) {
 }
 
 
-Matf softmax(const Matf &mat) {
+Matf Softmax(const Matf &mat) {
 	size_t cols = mat.cols();
 	size_t rows = mat.rows();
 	Matf res(rows, cols);
@@ -29,11 +29,11 @@ Matf softmax(const Matf &mat) {
 	return res;
 }
 
-VecBTC softmax(const VecBTC &vmat) {
+VecBTC Softmax(const VecBTC &vmat) {
 	size_t batch = vmat.size();
 	VecBTC res(batch);
 	for (int b = 0; b < batch; ++b) {
-		res[b] = softmax(vmat[b]);
+		res[b] = Softmax(vmat[b]);
 	}
 	return res;
 }

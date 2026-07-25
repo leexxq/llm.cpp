@@ -8,11 +8,14 @@
 #define FORWARD_NO_DISCARD [[nodiscard("result may be used in forward and backward later")]]
 #define BACKWARD_NO_DISCARD [[nodiscard("result may be used in grad update and backward later")]]
 
+
+using size_t = std::size_t;
 /**
  * BHTC is (batch, head,seq_len,channels) , (seq_len,channels) is matrix
  * Hc is head_channels that's attention head's q dim;
  * contains some
  * **/
+
 using Mati = Eigen::MatrixXi;
 
 template <class T>

@@ -1,6 +1,6 @@
 #include "adamw.h"
 #include <cmath>
-void AdamW(float* data, float * grad_data, float* m, float* v, size_t size, const AdamWParams &aw_params) {
+void AdamW(float* data, float const * grad_data, float* m, float* v, size_t size, const AdamWParams &aw_params) {
 	for (size_t i = 0; i < size; ++i) {
 		float param = data[i];
 		float grad = grad_data[i];

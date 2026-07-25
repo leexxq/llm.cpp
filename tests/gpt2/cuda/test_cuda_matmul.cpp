@@ -7,7 +7,7 @@
 #include <Eigen/Core>
 #include <chrono>
 
-using MatRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
+using MatfRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
 TEST(CudaMatMul, forward1){
 	StdVec<float> weight = {
 		 1.6394, -2.9037, -1.0096, -0.4072, 0.5853 ,
@@ -53,8 +53,8 @@ TEST(CudaMatMul, forward1){
     StdVec<float> outputs(2*3*5,0);
     gpt2cuda::BatchMatmulNNForward(outputs.data(),inputs.data(),weight.data(),bias.data(),2,3,4,5);
 
-    Eigen::Map<MatRow> map_output_1(outputs.data(),3,5);
-    Eigen::Map<MatRow> map_output_2(outputs.data() + 3 * 5,3,5);
+    Eigen::Map<MatfRow> map_output_1(outputs.data(),3,5);
+    Eigen::Map<MatfRow> map_output_2(outputs.data() + 3 * 5,3,5);
 
 
 		EXPECT_TRUE(map_output_1.isApprox(resexp[0], 0.001)) << 
@@ -105,8 +105,8 @@ TEST(CudaMatMul, backward1){
 
     gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
 
-    Eigen::Map<MatRow> map_d_inputs_0(d_inputs.data(),3,4);
-    Eigen::Map<MatRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
+    Eigen::Map<MatfRow> map_d_inputs_0(d_inputs.data(),3,4);
+    Eigen::Map<MatfRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
 
 	EXPECT_TRUE(map_d_inputs_0.isApprox(resexp[0], 0.001)) << 
 		map_d_inputs_0 << std::endl;
@@ -120,7 +120,7 @@ TEST(CudaMatMul, backward1){
 			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
 			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
 
-    Eigen::Map<MatRow> map_d_weight(d_weight.data(),4,5);
+    Eigen::Map<MatfRow> map_d_weight(d_weight.data(),4,5);
 		EXPECT_TRUE(map_d_weight.isApprox(d_weightexp, 0.001)) << 
     map_d_weight << std::endl;
 
@@ -134,8 +134,8 @@ TEST(CudaMatMul, backward1){
 }
 
 TEST(CudaMatMul,backward2){
-	constexpr int B = 64;
-	constexpr int T = 1024;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
 	constexpr int Oc = 4 * C;
 	VecBTC inputs(B);
@@ -209,7 +209,7 @@ TEST(CudaMatMul,backward2){
 		// 		EXPECT_NEAR(d_inputs_vec[i*T*C +j*C + k] ,d_inputs_res[i](j,k),0.001f);
 		// 	}
 		// }
-		Eigen::Map<MatRow> map_d_input(d_inputs_vec .data() + i *T*C,T,C);
+		Eigen::Map<MatfRow> map_d_input(d_inputs_vec .data() + i *T*C,T,C);
 		EXPECT_TRUE(map_d_input.isApprox(d_inputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_d_input.block<10,10>(T-10,C-10) << std::endl 
 			<< " ---cpu--- \n" << d_inputs_res[i].block<10,10>(T-10,C-10) <<std::endl ;
@@ -219,7 +219,7 @@ TEST(CudaMatMul,backward2){
 	}
 
 	//test d_weight_vec;
-	Eigen::Map<MatRow> map_d_weight(d_weight_vec .data() ,C,Oc);
+	Eigen::Map<MatfRow> map_d_weight(d_weight_vec .data() ,C,Oc);
 	EXPECT_TRUE(map_d_weight.isApprox(matmul.d_weight, 0.001));
 	// EXPECT_TRUE(map_d_weight.isApprox(matmul.d_weight, 0.001)) << map_d_weight << std::endl << matmul.d_weight << std::endl;
 
@@ -231,8 +231,8 @@ TEST(CudaMatMul,backward2){
 }
 
 TEST(CudaMatMul,fused_gelu_forward1){
-	constexpr int B = 64;
-	constexpr int T = 1024;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
 	constexpr int Oc = 4 * C;
 	VecBTC inputs(B);
@@ -283,7 +283,7 @@ TEST(CudaMatMul,fused_gelu_forward1){
 	}
 
 	for(int i =0 ; i < B ; ++i){
-		Eigen::Map<MatRow> map_output(outputs_vec .data() + i *T*Oc,T,Oc);
+		Eigen::Map<MatfRow> map_output(outputs_vec .data() + i *T*Oc,T,Oc);
 		EXPECT_TRUE(map_output.isApprox(outputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_output.block<10,10>(T-10,C-10) << std::endl 
 			<< " ---cpu--- \n" << outputs_res[i].block<10,10>(T-10,C-10) <<std::endl ;

@@ -9,14 +9,17 @@ namespace kernel {
         const int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
         if(idx < length){
-            bool pred = targets[idx / stride] == (idx % stride);
-            const int real_idx = (idx/stride)*ld + idx%stride;
-            d_logits[real_idx] += probs[real_idx];
+            bool pred = targets[idx/stride] == (idx % stride);
+            const int offest = (idx/stride)*ld + idx%stride;
+            float val = d_logits[offest];
+
+            val += probs[offest];
 
             if(pred){
-                d_logits[real_idx] -= 1;
+               val -= 1;
             }
-            d_logits[real_idx] *= scale;
+
+            d_logits[offest] =(d_logits[offest] + val) * scale;
         }
 
     }
@@ -24,7 +27,7 @@ namespace kernel {
 
         const int idx = threadIdx.x + blockDim.x * blockIdx.x;
         if(idx < length){
-            losses[idx] = -log(inputs[idx * stride + targets[idx]]);
+            losses[idx] = -logf(inputs[idx * stride + targets[idx]]);
         }
     }
 
@@ -45,9 +48,9 @@ namespace kernel {
     using DAlloci = cutlass::device_memory::allocation<int>;
     void BatchCrossEntropySoftmaxBackward(float * d_logits, float const * probs,int const * targets,int B,int T,int V,int Vp,float scale){
 
-        DAllocf d_logits_d(B*T*V);
-        DAllocf probs_d(B*T*V);
-        cutlass::device_memory::allocation<int> targets_d(B*T);
+        DAllocf d_logits_d(B*T*Vp);
+        DAllocf probs_d(B*T*Vp);
+        DAlloci targets_d(B*T);
 
         d_logits_d.copy_from_host(d_logits);
         probs_d.copy_from_host(probs);

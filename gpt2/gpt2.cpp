@@ -263,7 +263,7 @@ void GPT2::Forward(StdVec<int> &inputs, StdVec<int> &targets) {
 	probs = makeVecBTV(B_,T_,config_.vocab_size);
 	assert(logits_.front().cols() >= config_.vocab_size);
 	for (int b = 0; b < B_; ++b) {
-		probs[b] = softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
+		probs[b] = Softmax(logits_[b].block(0, 0, T_, config_.vocab_size));
 	}
 	DEBUG_PRINTLN("probs[0] row 0 sum = {}", probs[0].row(0).sum());
 	DEBUG_PRINTLN("probs forward sharp: ({} , {} , {})", probs.size(), probs[0].rows(), probs[0].cols());

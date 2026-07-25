@@ -1,8 +1,10 @@
 #pragma once
 #include "global.h"
 
-Matf softmax(const Matf &mat);
+FORWARD_NO_DISCARD
+Matf Softmax(const Matf &mat);
 
-void softmax(const Matf &mat, Matf &output);
+void Softmax(const Matf &mat, Matf &output);
 
-VecBTC softmax(const VecBTC &vmat);
+FORWARD_NO_DISCARD
+VecBTC Softmax(const VecBTC &vmat);

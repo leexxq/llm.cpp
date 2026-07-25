@@ -6,7 +6,7 @@
 #include <chrono>
 
 
-using MatRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
+using MatfRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
 
 TEST(CudaResidual, forward1){
 
@@ -54,7 +54,7 @@ TEST(CudaResidual, forward1){
 	}
     //test outputs
     for(int i = 0 ; i < B ; ++i){
-        Eigen::Map<MatRow> map_outputs(outputs_vec.data() + i * T*C,T,C);
+        Eigen::Map<MatfRow> map_outputs(outputs_vec.data() + i * T*C,T,C);
 		EXPECT_TRUE(map_outputs.isApprox(outputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_outputs.block<3,3>(0,0) << std::endl 
 			<< " ---cpu--- \n" << outputs_res[i].block<3,3>(0,0) <<std::endl ;

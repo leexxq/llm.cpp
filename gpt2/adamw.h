@@ -11,4 +11,4 @@ struct AdamWParams {
 };
 
 
-void AdamW(float* data, float * grad_data, float* m, float* v, size_t size, const AdamWParams &aw_params) ;
+void AdamW(float* data, float const* grad_data, float* m, float* v, size_t size, const AdamWParams &aw_params) ;

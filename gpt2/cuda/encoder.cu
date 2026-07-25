@@ -64,7 +64,7 @@ namespace gpt2cuda {
     }
 
     using DAlloc = cutlass::device_memory::allocation<float>;
-    void BatchEncodeBackward(float* d_wte,float * d_wpe, float const*  d_outputs,int const * inputs,int B,int T,int C,int Vp,int MaxT){
+    void BatchEncoderBackward(float* d_wte,float * d_wpe, float const*  d_outputs,int const * inputs,int B,int T,int C,int Vp,int MaxT){
         DAllocf d_wte_d(Vp*C);
         DAllocf d_wpe_d(MaxT*C);
 

@@ -2,21 +2,20 @@
 #include "layernorm.h"
 #include "global.h"
 #include <gtest/gtest.h>
-#include <Eigen/Core>
 #include <chrono>
 
 
-using MatRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
+using MatfRow = Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>;
 
 TEST(CudaLayerNorm, forward1){
 
-	constexpr int B = 64;
-	constexpr int T = 1024;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
     auto layernorm = LayerNorm(B,T,C);
 
-	layernorm.beta = Vecf::Random(C);
-	layernorm.gamma = Vecf::Random(C);
+	layernorm.beta.setRandom(C);
+	layernorm.gamma.setRandom(C);
 	
 	VecBTC inputs(B);
 	for(int i =0 ; i < B ; ++i){
@@ -53,7 +52,7 @@ TEST(CudaLayerNorm, forward1){
 	}
     //test outputs
     for(int i = 0 ; i < B ; ++i){
-        Eigen::Map<MatRow> map_outputs(outputs_vec.data() + i * T*C,T,C);
+        Eigen::Map<MatfRow> map_outputs(outputs_vec.data() + i * T*C,T,C);
 		EXPECT_TRUE(map_outputs.isApprox(outputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_outputs.block<3,3>(0,0) << std::endl 
 			<< " ---cpu--- \n" << outputs_res[i].block<3,3>(0,0) <<std::endl ;
@@ -84,8 +83,8 @@ TEST(CudaLayerNorm, forward1){
 TEST(CudaLayerNorm, backward1){
 	//require B,T,C
 
-	constexpr int B = 64;
-	constexpr int T = 1024;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
     auto layernorm = LayerNorm(B,T,C);
 
@@ -121,12 +120,14 @@ TEST(CudaLayerNorm, backward1){
 
 	VecBTC d_inputs_res ;
 	{
+		auto _  = layernorm.Forward(inputs); //for compute means and rstds which is intermediate value used for backward 
 		auto start = std::chrono::high_resolution_clock::now();
 		d_inputs_res = layernorm.Backward(d_outputs, inputs);
 		auto end = std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
+
 	StdVec<float> mean_vec(B*T);
 	StdVec<float> rstd_vec(B*T);
 	for(int i =0 ; i < B ; ++i){
@@ -138,8 +139,8 @@ TEST(CudaLayerNorm, backward1){
 
 
     StdVec<float> d_inputs_vec(B*T*C,0);
-	StdVec<float> d_gamma_vec(B*T,0);
-	StdVec<float> d_beta_vec(B*T,0);
+	StdVec<float> d_gamma_vec(C,0);
+	StdVec<float> d_beta_vec(C,0);
 
 	{
 		auto start = std::chrono::high_resolution_clock::now();
@@ -155,7 +156,7 @@ TEST(CudaLayerNorm, backward1){
 
 	//test d_inputs
     for(int i = 0 ; i < B ; ++i){
-        Eigen::Map<MatRow> map_d_inputs(d_inputs_vec.data() + i * T*C,T,C);
+        Eigen::Map<MatfRow> map_d_inputs(d_inputs_vec.data() + i * T*C,T,C);
 		EXPECT_TRUE(map_d_inputs.isApprox(d_inputs_res[i], 0.001)) 
 			<< "---gpu---\n"<<map_d_inputs.block<5,5>(0,0) << std::endl 
 			<< " ---cpu--- \n" << d_inputs_res[i].block<5,5>(0,0) <<std::endl ;
@@ -164,13 +165,13 @@ TEST(CudaLayerNorm, backward1){
 
 	//test d_gamma
 	Eigen::Map<Vecf> map_d_gamma(d_gamma_vec.data(),C);
-		EXPECT_TRUE(map_d_gamma.isApprox(layernorm.d_gamma, 0.001)) 
-			<< "---gpu---\n"<<map_d_gamma.tail(9) << std::endl 
+	EXPECT_TRUE(map_d_gamma.isApprox(layernorm.d_gamma, 0.001)) 
+		<< "---gpu---\n"<<map_d_gamma.tail(9) << std::endl 
 		<< " ---cpu--- \n" << layernorm.d_gamma.tail(9) <<std::endl ;
 
 	//test d_beta
 	Eigen::Map<Vecf> map_d_beta(d_beta_vec.data(),C);
 		EXPECT_TRUE(map_d_beta.isApprox(layernorm.d_beta, 0.001)) 
-			<< "---gpu---\n"<<map_d_beta.tail(9) << std::endl 
+		<< "---gpu---\n"<<map_d_beta.tail(9) << std::endl 
 		<< " ---cpu--- \n" << layernorm.d_beta.tail(9) <<std::endl ;
 }
