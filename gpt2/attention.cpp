@@ -1,6 +1,7 @@
 #include "attention.h"
 #include <cassert>
 #include <cstddef>
+#include "softmax.h"
 
 Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();
@@ -48,6 +49,8 @@ Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq,
 
 	return output;
 }
+
+
 
 void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC &d_outputs, int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();
@@ -127,6 +130,7 @@ void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC
 	// std::cout << d_vv << std::endl;
 	// std::cout << "---------" << std::endl;
 }
+
 
 VecBTC Attention::Forward(const VecBTC &inputs) {
 	size_t batchs = inputs.size();
