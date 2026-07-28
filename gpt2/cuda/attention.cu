@@ -1,4 +1,6 @@
 #include "attention.cuh"
+#include "cute/arch/copy.hpp"
+#include "cute/util/print.hpp"
 #include "global.cuh"
 #include "cute/tensor.hpp"
 #include "cute/util/debug.hpp"
@@ -7,6 +9,7 @@
 #include "cutlass/util/device_memory.h"
 
 #include <cassert>
+#include <cstdio>
 namespace gpt2cuda {
 namespace kernel {
 using namespace cute;
@@ -30,8 +33,9 @@ template <class O_tensor, class Sum_tensor>
 __forceinline__ __device__ auto normalize_scale_o(O_tensor& row_tOrO, const Sum_tensor& tsum_frag) {
 	CUTE_UNROLL
 	for (int r = 0; r < size<1>(row_tOrO); ++r) {
+		float norm = 1.f/ tsum_frag(r);
 		for (int c = 0; c < size<0>(row_tOrO); ++c) {
-			row_tOrO(c, r) = row_tOrO(c, r) / tsum_frag(r);
+			row_tOrO(c, r) = row_tOrO(c, r) * norm;
 		}
 	}
 }
@@ -46,30 +50,24 @@ __forceinline__ __device__ auto scaled_softmax(S_tensor& row_tSrS, O_tensor& row
 
 	CUTE_UNROLL
 	for (int r = 0; r < size<1>(row_tSrS); ++r) {
-		float tmax_frag_old;
-		if constexpr (!Is_first) {
-			tmax_frag_old = tmaxs_frag(r);
-		}
+		float tmax_frag_new;
 
-		tmaxs_frag(r) = row_tSrS(0, r);
+		tmax_frag_new = row_tSrS(0, r);
 
 		CUTE_UNROLL
 		for (int c = 1; c < size<0>(row_tSrS); ++c) {
 			// per thread per sum
-			tmaxs_frag(r) = max(tmaxs_frag(r), row_tSrS(c, r));
+			tmax_frag_new = max(tmax_frag_new, row_tSrS(c, r));
 		}
 
 		// quad reduce max
 		CUTE_UNROLL
 		for (int off = 1; off < 4; off <<= 1) {
-			tmaxs_frag(r) = max(__shfl_xor_sync(0xFFFFFFFFU, tmaxs_frag(r), off), tmaxs_frag(r));
+			tmax_frag_new = max(__shfl_xor_sync(0xFFFFFFFFU, tmax_frag_new, off), tmax_frag_new);
 		}
 
-		float tmax_frag_new;
-		if constexpr (Is_first) {
-			tmax_frag_new = tmaxs_frag(r);
-		} else {
-			tmax_frag_new = max(tmaxs_frag(r), tmax_frag_old);
+		if constexpr (!Is_first) {
+			tmax_frag_new = max(tmaxs_frag(r), tmax_frag_new);
 		}
 
 		// scale_softmax : softmax(QK^T);
@@ -78,13 +76,25 @@ __forceinline__ __device__ auto scaled_softmax(S_tensor& row_tSrS, O_tensor& row
 			row_tSrS(c, r) = exp2f(klog2_scale * (row_tSrS(c, r) - tmax_frag_new));
 		}
 
-		// per thread sum
-		if constexpr (Is_first) {
-			tsums_frag(r) = row_tSrS(0, r);
-		} else {
-			float correction = exp2f(klog2_scale * (tmax_frag_old - tmax_frag_new));
-			tsums_frag(r) = correction * tsums_frag(r) + row_tSrS(0, r);
 
+		float tsum_frag_new = 0.f;
+
+
+		CUTE_UNROLL
+		for (int c = 0; c < size<0>(row_tSrS); ++c) {
+			// per thread sum
+			tsum_frag_new += row_tSrS(c, r);
+		}
+
+		// quad reduce sum
+		for (int off = 1; off < 4; off <<= 1) {
+			tsum_frag_new += __shfl_xor_sync(0xFFFFFFFFU, tsum_frag_new, off);
+		}
+
+		// per thread sum
+		if constexpr (!Is_first) {
+			float correction = exp2f(klog2_scale * (tmaxs_frag(r) - tmax_frag_new));
+			tsum_frag_new += correction * tsums_frag(r);
             // scale pre o
 			CUTE_UNROLL
 			for (int c = 0; c < size<0>(row_tOrO); ++c) {
@@ -92,18 +102,8 @@ __forceinline__ __device__ auto scaled_softmax(S_tensor& row_tSrS, O_tensor& row
 			}
 		}
 
-		CUTE_UNROLL
-		for (int c = 1; c < size<0>(row_tSrS); ++c) {
-			// per thread sum
-			tsums_frag(r) += row_tSrS(c, r);
-		}
-
-		// quad reduce sum
-		for (int off = 1; off < 4; off <<= 1) {
-			tsums_frag(r) += __shfl_xor_sync(0xFFFFFFFFU, tsums_frag(r), off);
-		}
-
 		tmaxs_frag(r) = tmax_frag_new;
+		tsums_frag(r) = tsum_frag_new;
 	}
     
 
@@ -145,7 +145,45 @@ __forceinline__ __device__ auto convert_C_to_row(Tensor<Engine,Layout> & ctensor
 	return make_tensor(ctensor.data(),zipped_divide(ctensor.layout(), row_tiler)); //(nums_pre_row,rows)
 }
 
-// flash attention v2 ，see also https://arxiv.org/pdf/2307.08691
+#if 0
+	#define debug_threads 0
+
+	#define threadid_print(id,...) do{\
+			if(thread(id)){\
+				printf("[thread:%d]",id);\
+				printf(__VA_ARGS__);\
+			}\
+		}while(false)
+
+	#define threadid_print_tensor(id,desc,tensor) do{\
+			threadid_print(id,desc);\
+			if(thread(id)){\
+				print_tensor(tensor);\
+			}\
+		}while(false)
+
+	#define thread_print(...) do {\
+			int debug_ids[] = {debug_threads};\
+			for(auto & id : debug_ids){\
+				threadid_print(id,__VA_ARGS__);\
+			}\
+		}while(false)
+
+	#define thread_print_tensor(desc,tensor) do{\
+		int debug_ids[] = {debug_threads};\
+		for(auto & id : debug_ids){\
+			threadid_print_tensor(id,desc,tensor);\
+		}\
+	}while(false)
+
+
+#else
+	#define thread_print(...)
+	#define thread_print_tensor(x,y)
+#endif
+
+
+// flash attention v2,see also https://arxiv.org/pdf/2307.08691
 // visit https://blog.echen.io/p/flashattention-2-in-cute-from-scratch
 template <class TQ, class LayoutQ, class TiledCopyQ,
 		class TK, class LayoutK, class TiledCopyK,
@@ -171,20 +209,18 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 	auto block_V = make_tensor(V, L_V)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_O = make_tensor(O, L_O)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 
-	// auto Tr =  size<0>(block_Q) / Br;
-	// auto Tc =  size<0>(block_K) / Bc;
-	auto Tr = 1;
-	auto Tc = 1;
+	auto Tr =  size<0>(block_Q) / Br;
+	auto Tc =  size<0>(block_K) / Bc;
+	// auto Tr = 1;
+	// auto Tc = 1;
 
 	for (int tr = 0; tr < Tr; ++tr) {
 		Tensor gQ = local_tile(block_Q, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
 		Tensor gO = local_tile(block_O, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
 		//alloc fragment for S
 		Tensor tSrS = partition_fragment_C(mmaS, make_shape(Int<Br>{}, Int<Bc>{}));
-		clear(tSrS);
 
 		// retile the register file layout (due per thread ownning multi row datas, we each calculate them.)
-
 		Tensor row_tSrS = convert_C_to_row(tSrS); //(nums_pre_row,rows)
 
 		// alloc register for sum op and max op;
@@ -198,7 +234,11 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 		// retile the register file layout (due per thread ownning multi row datas, we each calculate them.)
 		Tensor row_tOrO = convert_C_to_row(tOrO); //(nums_pre_row,rows)
 
+
 		for (int tc = 0; tc < Tc; ++tc) {
+
+			thread_print("tr:%d,tc:%d\n",tr,tc);
+
 			Tensor gK = local_tile(block_K, make_tile(Int<Bc>{}, Int<Hc>{}), make_coord(tc, 0));
 			Tensor gV = local_tile(block_V, make_tile(Int<Bc>{}, Int<Hc>{}), make_coord(tc, 0));
 
@@ -226,9 +266,9 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			if (tc == 0) {
 				copy(copy_Q, tQgQ, tQsQ);
 			}
+
 			copy(copy_K, tKgK, tKsK);
 			cp_async_fence();
-			// async copy v
 
 			//wait q and k
 			cp_async_wait<0>();
@@ -259,23 +299,22 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			copy(s2r_atom_Q, tXsQ, tXrQ);
 			copy(s2r_atom_K, tXsK, tXrK);
 
-			if (thread0()) {
-				print("tSrQ:");
-				print_tensor(tSrQ);
-				print("tSrK:");
-				print_tensor(tSrK);
-			}
+			thread_print_tensor("tSrQ:", tSrQ);
+			thread_print_tensor("tSrK:", tSrK);
+			
 
+			// S need to be clear
+			clear(tSrS);
 			// S = QK^T
 			for (int k = 0; k < size<2>(tSrQ); ++k) {
 				gemm(mmaS, tSrQ(_, _, k), tSrK(_, _, k), tSrS);
 			}
-            if(thread0()){
-				print("tSrS(gemm(Q,KT)):");
-				print_tensor(tSrS);
-				print("row_tSrS(gemm(Q,KT)):");
-				print_tensor(row_tSrS);
-            }
+
+			thread_print_tensor("tSrS(gemm(Q,KT)):",tSrS);
+			thread_print_tensor("row_tSrS(gemm(Q,KT)):",row_tSrS);
+
+
+
 
 
 			// online softmax
@@ -284,28 +323,12 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			} else {
 				scaled_softmax<false>(row_tSrS, row_tOrO, tmax_frag, tsum_frag);
 			}
-            if(thread0()){
-                print("tsum_frag:");
-                print_tensor(tsum_frag);
 
-                print("tmax_frag:");
-                print_tensor(tmax_frag);
+			thread_print_tensor("tsum_frag:",tsum_frag);
+			thread_print_tensor("tmax_frag:",tmax_frag);
 
-            }
-
-			if (thread0()) {
-				// print_tensor(sQ);
-				// print("flat tSrS:");
-				// for(int i =0 ; i < tSrS.size(); ++i){
-				//     print(tSrS(i));
-				//     print(" ");
-				// }
-				// print("\n");
-				print("tSrS(after scaled_softmax , S = e^(S - m) ) : ");
-				print_tensor(tSrS);
-				print("row_tSrS (after scaled_softmax , S = e^(S - m) ) : ");
-				print_tensor(row_tSrS);
-			}
+			thread_print_tensor("tSrS(after scaled_softmax , S = e^(S - m) ) : ",tSrS);
+			thread_print_tensor("row_tSrS (after scaled_softmax , S = e^(S - m) ) : ",row_tSrS);
 
 
 			//now we get per row from formula softmax(QK^T)
@@ -325,31 +348,24 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 				Tensor tXrV = thr_copy_V.retile_D(tVrV);
 				copy(copy_V, tVgV, tXrV);
 
-				if (thread0()) {
-					print("gV:");
-					print_tensor(gV);
-					print("tVgV:");
-					print_tensor(tVgV);
-					print("tVrV:");
-					print_tensor(tVrV);
-				}
+				thread_print_tensor("gV:", gV);
+				thread_print_tensor("tVgV:", tVgV);
+				thread_print_tensor("tVrV:", tVrV);
+
 
 				//convert to half type
 				Tensor tVrV_fp16 = convert_type<cute::half_t>(tVrV);
 
-				if (thread0()) {
-					print("tVrV fp16:");
-					print_tensor(tVrV_fp16);
-				}
+				thread_print_tensor("tVrV fp16:",tVrV_fp16);
 
 				Tensor tVsV = thr_copy_V.partition_D(sV);
 				copy(copy_V, tXrV, tVsV);
+
+				// !!! sV must copy finish
+				__syncthreads();
 			}
 
-			if (thread0()) {
-				print("sV:");
-				print_tensor(sV);
-			}
+			thread_print_tensor("sV:",sV);
 
 			Layout sVT_layout = make_layout(make_shape(Int<Hc>{}, Int<Bc>{}), LayoutLeft{});
 			Tensor sVT = make_tensor(make_smem_ptr(shared_memV), sVT_layout);
@@ -368,20 +384,18 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 			copy(s2r_atom_V, tXsVT, tXrVT);
 
-			if (thread0()) {
-				print("sVT:");
-				print_tensor(sVT);
-				print("tVrVT:");
-				print_tensor(tVrVT);
-			}
+			thread_print_tensor("sVT:",sVT);
+			thread_print_tensor("tVrVT:",tVrVT);
 
 			Tensor tSrS_fp16 = convert_type<cute::half_t>(tSrS);
-			if (thread0()) {
-				print("tSrS:");
-				print_tensor(tSrS);
-				print("tSrS_fp16:");
-				print_tensor(tSrS_fp16);
-			}
+
+			thread_print_tensor("tSrS:",tSrS);
+			thread_print_tensor("tSrS_fp16",tSrS);
+
+			// __syncthreads();
+			// threadid_print_tensor(32,"tSrS:",tSrS);
+			// threadid_print_tensor(32,"tSrS_fp16",tSrS);
+			// __syncthreads();
 
 			// convert s frag to a frag for o
 			auto retile_shape = make_shape(make_shape(size<0, 0>(tSrS_fp16), size<0, 1>(tSrS_fp16), _2{}), size<1>(tSrS_fp16), size<2>(tSrS_fp16) / _2{});
@@ -390,36 +404,40 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 			Tensor tSrS_fp16_2_A_frag = make_tensor(tSrS_fp16.data(), make_layout(retile_shape, retile_stride));
 
-			if (thread0()) {
-				print("tSrS_fp16_2_A_frag:");
-				print_tensor(tSrS_fp16_2_A_frag);
-			}
-            
+			thread_print_tensor("tSrS_fp16_2_A_frag:",tSrS_fp16_2_A_frag);
+
+			// __syncthreads();
+			// threadid_print_tensor(32,"tSrS_fp16_2_A_frag:",tSrS_fp16_2_A_frag);
+			// __syncthreads();
+
+
+
+
 
 			// we will calculate SV
 			// due O = SV
 			for (int k = 0; k < size<2>(tVrVT); ++k) {
-				gemm(mmaS, tSrS_fp16_2_A_frag(_, _, k), tVrVT(_, _, k), tOrO);
+				gemm(mmaO, tSrS_fp16_2_A_frag(_, _, k), tVrVT(_, _, k), tOrO);
 			}
 
-			if (thread0()) {
-				print("tOrO (e^(S-m) * V):");
-				print_tensor(tOrO);
-			}
+
+			thread_print_tensor("tOrO (e^(S-m) * V):",tOrO);
+
+			// __syncthreads();
+			// threadid_print_tensor(32,"tOrO (e^(S-m) * V):",tOrO);
+			// __syncthreads();
+
 		}
 		// scale o ...
 		normalize_scale_o(row_tOrO, tsum_frag);
 
-		if (thread0()) {
-			print("tOrO(after normalize scale ...):");
-			print_tensor(tOrO);
-        }
+		thread_print_tensor("tOrO(after normalize scale ...):",tOrO);
 
 		// copy O to Q for coalease write
 		Layout sO_layout = make_layout(make_shape(Int<Br>{}, Int<Hc>{}), LayoutRight{});
 		Tensor sO = make_tensor(make_smem_ptr(shared_memQ), sO_layout);
 
-		using SmemCopyAtomO = Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, float>;
+		using SmemCopyAtomO = Copy_Atom<AutoVectorizingCopy, float>;
 
 		TiledCopy r2s_tiled_copy_O = make_tiled_copy_C(SmemCopyAtomO{}, mmaO);
 
@@ -428,16 +446,14 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 		Tensor copy_trO = smem_thr_copy_O.retile_S(tOrO);
 		Tensor copy_tsO = smem_thr_copy_O.partition_D(sO);
 
-		__syncthreads();
 		// register -> smem
 		copy(r2s_tiled_copy_O, copy_trO, copy_tsO);
 
-		if (thread0()) {
-			print("tOrO:");
-			print_tensor(tOrO);
-			print("sO:");
-			print_tensor(sO);
-		}
+		// sO must copy finish!
+		__syncthreads();
+
+		thread_print_tensor("tOrO:",tOrO);
+		thread_print_tensor("sO:",sO);
 
 		ThrCopy s2g_thr_tiled_copy = copy_O.get_slice(threadIdx.x);
 		Tensor copy_tOsO = s2g_thr_tiled_copy.partition_S(sO);
@@ -449,35 +465,29 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 		// smem -> registers
 		copy(copy_O, copy_tOsO, copy_tOrO_frag_retile);
 
-		if (thread0()) {
-			print("copy_tOsO:");
-			print_tensor(copy_tOsO);
-			print("copy_tOrO_frag:");
-            print_tensor(copy_tOrO_frag);
-		}
+		// if (thread0()) {
+		// 	print("copy_tOsO:");
+		// 	print_tensor(copy_tOsO);
+		// 	print("copy_tOrO_frag:");
+        //     print_tensor(copy_tOrO_frag);
+		// }
 
-        if(thread0()){
-            print("gO:");
-            print_tensor(gO);
-        }
+        // if(thread0()){
+        //     print("gO:");
+        //     print_tensor(gO);
+        // }
 
 		// registers -> gmem
 		copy(copy_O,copy_tOrO_frag_retile,copy_tOgO);
 
-		if (thread0()) {
-            print("gO(after copy):");
-            print_tensor(gO);
-			print("copy_tOrO_frag:");
-			print_tensor(copy_tOrO_frag);
-			print("copy_tOgO:");
-            print_tensor(copy_tOgO);
-		}
 
+		thread_print_tensor("gO(after copy):",gO);
+		thread_print_tensor("copy_tOrO_frag:",copy_tOrO_frag);
+		thread_print_tensor("copy_tOgO:",copy_tOgO);
 	}
 }
 
 void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
-	using namespace cute;
 
 	assert(C3 % 3 == 0);
 	int C = C3 / 3;
@@ -510,7 +520,7 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 	// TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{},Layout<Shape<_4,_1,_1>>{},Tile<_64,Layout<Shape<_2,_4,_4>,Stride<_1,_8,_2>>,_8>{});
 	TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<_64, _64, _8>{});
 
-	TiledMMA mmaO = make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<_64, _32, _64>{});
+	TiledMMA mmaO = make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<_64, _32, _16>{});
 
 	// print(copyQ);
 	// print(copyK);
@@ -528,7 +538,10 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 			float, decltype(L_V), decltype(copyV),
 			float, decltype(L_O), decltype(copyO),
 			decltype(mmaS), decltype(mmaO)>;
-	kernel_fptr<<<1, 128>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, mmaS, mmaO);
+
+	
+	dim3 dimGrid(B,NH);
+	kernel_fptr<<<dimGrid, 128>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, mmaS, mmaO);
     CUDA_CHECK_LAST();
 }
 

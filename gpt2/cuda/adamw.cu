@@ -21,13 +21,13 @@ float* data ,float* grad_data, float *m ,float * v ,  std::size_t size,
         float m_ = beta1 * m[idx] + (1.0f - beta1) * grad;
         float v_ = beta2 * v[idx] + (1.0f - beta2) * grad * grad;
 
-        float m_hat = m_ / (1.0f - std::pow(beta1, t));
-        float v_hat = v_ / (1.0f - std::pow(beta2, t));
+        float m_hat = m_ / (1.0f - powf(beta1, t));
+        float v_hat = v_ / (1.0f - powf(beta2, t));
 
         m[idx] = m_;
         v[idx] = v_;
 
-        data[idx] -= lr * (m_hat / (std::sqrt(v_hat) + eps) + weight_decay * param);
+        data[idx] -= lr * (m_hat / (sqrtf(v_hat) + eps) + weight_decay * param);
     }
 }
 

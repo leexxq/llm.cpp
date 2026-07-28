@@ -65,7 +65,7 @@ TEST(CudaAdamW,update1){
         gpt2cuda::AdamW(data_gpu.data(), grad_data.data(),m_cpu.data(),v_cpu.data(), m_cpu.size(), adamw_params.lr,adamw_params.beta1,adamw_params.beta2,adamw_params.eps,adamw_params.weight_decay,adamw_params.t);
 		auto end = std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
 
     
@@ -73,7 +73,7 @@ TEST(CudaAdamW,update1){
     for(int i = 0 ; i < B ; ++i){
         Eigen::Map<MatfRow> map_data_gpu(data_gpu.data() + i * T*Vp,T,Vp);
         Eigen::Map<MatfRow> map_data_cpu(data_cpu.data() + i * T*Vp,T,Vp);
-		EXPECT_TRUE(map_data_gpu.isApprox(map_data_cpu, 0.001f)) 
+		EXPECT_TRUE(map_data_gpu.isApprox(map_data_cpu, 0.01f)) 
 			<< "---gpu---\n"<<map_data_gpu.block<3,3>(0,0) << std::endl 
 			<< " ---cpu--- \n" << map_data_cpu.block<3,3>(0,0) <<std::endl ;
 

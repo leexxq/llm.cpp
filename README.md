@@ -61,9 +61,11 @@ git submodule update --init --recursive
 ```
 
 ### Enable CUDA
+
 ```bash
 cd build
-cmake -DENABLE_CUDA=ON ..
+#Initial build command
+cmake -DENABLE_CUDA=ON -DCMAKE_CUDA_COMPILER=/path/to/your/nvcc ..
 ```
 
 ### CUDA Implement Unit Tests
