@@ -1,7 +1,6 @@
 #include "attention.h"
 #include <cassert>
 #include <cstddef>
-#include "softmax.h"
 
 Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();

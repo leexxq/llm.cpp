@@ -113,8 +113,8 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
 
 
         using Gemm = cutlass::gemm::device::GemmBatched<
-            ElementInputA, cutlass::layout::RowMajor,
-            ElementInputB, cutlass::layout::RowMajor,
+            ElementInputA, LayoutA,
+            ElementInputB, LayoutB,
             ElementOutput, cutlass::layout::RowMajor,
             ElementAccumulator,cutlass::arch::OpClassSimt,cutlass::arch::Sm80,
             ThreadblockShape,
@@ -128,15 +128,16 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
         cutlass::gemm::GemmCoord problem_size(T, Oc, C);
 
         
-        auto A_m = cutlass::make_TensorRef(inputs_d.get(),cutlass::layout::RowMajor::packed({T,C}));
-        auto W_m = cutlass::make_TensorRef(weight_d.get(),cutlass::layout::RowMajor::packed({C,Oc}));
+        auto A_m = cutlass::make_TensorRef(inputs_d.get(),LayoutA::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d.get(),LayoutB::packed({C,Oc}));
         auto D_m = cutlass::make_TensorRef(outputs_d.get(), cutlass::layout::RowMajor::packed({T,Oc}));
+
 
         typename Gemm::Arguments argument{
             problem_size,
             A_m,
             T*C,
-            W_m,
+            B_m,
             0,
             D_m,
             T*Oc,

@@ -24,15 +24,21 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 aux_source_directory(gpt2/ TEST_GPT2_SRC)
-if(ENABLE_CUDA)
-	aux_source_directory(gpt2/cuda TEST_GPT2_CUDA_SRC)
-endif()
 
 message(STATUS "========== TEST_GPT2_SRC ==========")
 foreach(file ${TEST_GPT2_SRC})
   message(STATUS "  ${file}")
 endforeach()
 message(STATUS "==================================")
+
+if(ENABLE_CUDA)
+	aux_source_directory(gpt2/cuda TEST_GPT2_CUDA_SRC)
+	message(STATUS "========== TEST_GPT2_CUDA_SRC ==========")
+	foreach(file ${TEST_GPT2_CUDA_SRC})
+	message(STATUS "  ${file}")
+	endforeach()
+	message(STATUS "==================================")
+endif()
 
 
 add_executable(gpt2test EXCLUDE_FROM_ALL ${TEST_GPT2_SRC})

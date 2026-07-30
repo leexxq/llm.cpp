@@ -20,6 +20,7 @@ class TestAttention : public Attention{
 		VecBHTT att_no_scaled;
 		VecBHTT output_no_scaled;
 	private:
+
 		Attention::THc ScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 			size_t seq_len = vv.rows();
 			size_t head_channels = vv.cols();
@@ -36,7 +37,6 @@ class TestAttention : public Attention{
 				for (int r = 0; r < rows; ++r) {
 					float maxval = pre_att[b][h].row(r).maxCoeff();
 					att_no_scaled[b][h].row(r) = (pre_att[b][h].row(r).array() - maxval).exp();
-
 
 					att[b][h].row(r) = (pre_att[b][h].row(r).array() - maxval).exp();
 					float expsum = att[b][h].row(r).sum();
@@ -206,6 +206,7 @@ TEST(CudaAttention,flash_attention_f32_forward1){
 }
 
 
+
 // multi batch  and multi head
 TEST(CudaAttention,flash_attention_f32_forward2){
 	constexpr size_t B = 64;
@@ -326,8 +327,8 @@ TEST(CudaAttention,flash_attention_f32_forward2){
 
 // multi T 
 TEST(CudaAttention,flash_attention_f32_forward3){
-	constexpr size_t B = 64;
-	constexpr size_t T = 1024;
+	constexpr size_t B = 4;
+	constexpr size_t T = 64;
     constexpr size_t NH = 12 ;
     constexpr size_t C = 32 * NH;
     constexpr size_t C3 = 3 * C;
@@ -343,14 +344,14 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 
 
 
-	// VecBTC outputs_res ;
-	// {
-	// 	auto start = std::chrono::high_resolution_clock::now();
-	// 	outputs_res = att.ForwardWithNoCausal(inputs);
-	// 	auto end = std::chrono::high_resolution_clock::now();
-	// 	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-	// 	std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
-	// }
+	VecBTC outputs_res ;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		outputs_res = att.ForwardWithNoCausal(inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
 
 
     StdVec<float> outputs_vec(B*T*C);
@@ -431,11 +432,241 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 
 
 	// 
+	for(int b = 0 ; b < B ; ++b){
+		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
+		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
+			<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+	}
+
+}
+
+
+
+// multi T with C / NH = 64 
+TEST(CudaAttention,flash_attention_f32_forward4){
+	constexpr size_t B = 4;
+	constexpr size_t T = 64;
+    constexpr size_t NH = 12;
+    constexpr size_t C = 64 * NH;
+    constexpr size_t C3 = 3 * C;
+
+    auto att =  TestAttention(B,T,C,NH);
+
+    VecBTC inputs(B);
+	StdVec<float> inputs_vec(B*T*C3);
+	for(int i =0 ; i < B ; ++i){
+		inputs[i] = Matf::Random(T,C3);
+        Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
+	}
+
+
+
+	VecBTC outputs_res ;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		outputs_res = att.ForwardWithNoCausal(inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+    StdVec<float> outputs_vec(B*T*C);
+
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+        gpt2cuda::BatchAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		auto end= std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+	// std::cout << "outputs_vec : " << std::endl;
 	// for(int b = 0 ; b < B ; ++b){
 	// 	auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
-	// 	EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
-	// 		<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
-	// 		<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+	// 	std::cout << outputs_vec_map << std::endl;
+	// 	std::cout << "---------------\n";
 	// }
+
+	// std::cout << "Q:" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << inputs[b].block(0,0,T,C).block(0,h* C/NH,T,C/NH) << std::endl;
+	// 	}
+	// }
+
+	// std::cout << "K:" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << inputs[b].block(0,C,T,C).block(0,h*C/NH,T,C/NH) << std::endl;
+	// 	}
+	// }
+
+	// std::cout << "V:" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << inputs[b].block(0,2*C,T,C).block(0,h*C/NH,T,C/NH) << std::endl;
+	// 	}
+	// }
+
+	// std::cout << "outputs_res : " << B << ", " << T  << ", " << C  << std::endl;
+	// for(auto & v : outputs_res){
+	// 	std::cout << v << std::endl;
+	// }
+
+
+	// std::cout << "pre_att_no_scaled(S):" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.pre_att_no_scaled[b][h] << std::endl;
+	// 	}
+	// }
+	// std::cout << "att_no_scaled(e^(S-m)):" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.att_no_scaled[b][h] << std::endl;
+	// 	}
+	// }
+	// std::cout << "output_no_scaled(e^(S-m) * V):" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.output_no_scaled[b][h] << std::endl;
+	// 	}
+	// }
+
+
+	// 
+	for(int b = 0 ; b < B ; ++b){
+		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
+		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.001f)) 
+			<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+	}
+
+}
+
+// min attention with casual example
+TEST(CudaAttention,flash_attention_casual_f32_forward1){
+	constexpr size_t B = 1;
+	constexpr size_t T = 64;
+    constexpr size_t NH = 1 ;
+    constexpr size_t C = 32 * NH;
+    constexpr size_t C3 = 3 * C;
+
+    auto att =  Attention(B,T,C,NH);
+
+    VecBTC inputs(B);
+	StdVec<float> inputs_vec(B*T*C3);
+	for(int i =0 ; i < B ; ++i){
+		inputs[i] = Matf::Random(T,C3);
+        Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
+	}
+
+
+
+	VecBTC outputs_res ;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		outputs_res = att.Forward(inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+    StdVec<float> outputs_vec(B*T*C);
+
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		auto end= std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+	for(int b = 0 ; b < B ; ++b){
+		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
+		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
+			<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+	}
+
+}
+
+
+
+
+// min attention with casual example
+TEST(CudaAttention,flash_attention_casual_f32_forward2){
+	constexpr size_t B = 16;
+	constexpr size_t T = 256;
+    constexpr size_t NH = 12;
+    constexpr size_t C = 64 * NH;
+    constexpr size_t C3 = 3 * C;
+
+    auto att =  Attention(B,T,C,NH);
+
+    VecBTC inputs(B);
+	StdVec<float> inputs_vec(B*T*C3);
+	for(int i =0 ; i < B ; ++i){
+		inputs[i] = Matf::Random(T,C3);
+        Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
+	}
+
+
+
+	VecBTC outputs_res ;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		outputs_res = att.Forward(inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+    StdVec<float> outputs_vec(B*T*C);
+
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		auto end= std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+	// std::cout << "outputs_res : " << B << ", " << T  << ", " << C  << std::endl;
+	// for(auto & v : outputs_res){
+	// 	std::cout << v << std::endl;
+	// }
+
+	// std::cout << "outputs_vec : " << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
+	// 	std::cout << outputs_vec_map << std::endl;
+	// 	std::cout << "---------------\n";
+	// }
+
+	for(int b = 0 ; b < B ; ++b){
+		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
+		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
+			<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+	}
 
 }

@@ -27,7 +27,7 @@ namespace kernel {
 
         const int idx = threadIdx.x + blockDim.x * blockIdx.x;
         if(idx < length){
-            losses[idx] = -logf(inputs[idx * stride + targets[idx]]);
+            losses[idx] = -log(inputs[idx * stride + targets[idx]]);
         }
     }
 
@@ -61,15 +61,15 @@ namespace kernel {
         d_logits_d.copy_to_host(d_logits);
     }
 
-    void BatchCrossEntropyForward(float* losses, float const * inputs, int const * targets,int B,int T,int C){
-        DAllocf inputs_d(B*T*C);
+    void BatchCrossEntropyForward(float* losses, float const * inputs, int const * targets,int B,int T,int V){
+        DAllocf inputs_d(B*T*V);
         DAllocf losses_d(B*T);
         DAlloci targets_d(B*T);
 
         inputs_d.copy_from_host(inputs);
         targets_d.copy_from_host(targets);
 
-        kernel::CrossEntropyForwardCUDA(losses_d.get(), inputs_d.get(), targets_d.get(), B*T, C);
+        kernel::CrossEntropyForwardCUDA(losses_d.get(), inputs_d.get(), targets_d.get(), B*T, V);
 
         losses_d.copy_to_host(losses);
 

@@ -14,7 +14,7 @@ using MatiRow = Eigen::Matrix<int,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>
 
 TEST(CudaCrossEntropy, forward1){
 	constexpr size_t B = 4;
-	constexpr size_t T = 64;
+	constexpr size_t T = 512;
 	constexpr size_t Vp = 50304;
 	constexpr size_t V = 50257;
 

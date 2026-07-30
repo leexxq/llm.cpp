@@ -87,7 +87,7 @@ void Layer::Forward(StdVecf& residual3 , const StdVecf &residual){
 
     BatchMatmulNTForward(l_qkv_.data(), l_ln1_.data(), l_qkv_weight.data(), l_qkv_bias.data(), B_,T_,C_,3*C_);
 
-    BatchAttentionForward(l_atty_.data(),l_qkv_.data(),B_,T_,3 * C_,NH_);
+    BatchCausalAttentionForward(l_atty_.data(),l_qkv_.data(),B_,T_,3 * C_,NH_);
 
     BatchMatmulNTForward(l_attproj_.data(),l_atty_.data(),l_attproj_weight.data(),l_attproj_bias.data(),B_,T_,C_,C_); 
 
@@ -102,7 +102,7 @@ void Layer::Forward(StdVecf& residual3 , const StdVecf &residual){
     // if reference
     // BatchMatmulGeluForward(l_fch_gelu_.data(),l_ln2_.data(),l_fch_weight_.data(),l_fch_bias_.data(),B_,T_,C_,4*C_);
 
-    BatchMatmulNNForward(l_fcproj_.data(),l_fch_gelu_.data(),l_fcproj_weight.data(),l_fcproj_bias.data(),B_,T_,4*C_,C_);
+    BatchMatmulNTForward(l_fcproj_.data(),l_fch_gelu_.data(),l_fcproj_weight.data(),l_fcproj_bias.data(),B_,T_,4*C_,C_);
 
     BatchResidualForward(residual3.data(),l_residual2_.data(),l_fcproj_.data(),B_,T_,C_);
 

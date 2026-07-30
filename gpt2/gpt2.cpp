@@ -271,7 +271,7 @@ void GPT2::Forward(StdVec<int> &inputs, StdVec<int> &targets) {
 
 	this->mean_loss = targets_.size() > 0 ? loss_.Forward(probs, targets_) : -1.0f;
 
-	DEBUG_PRINTLN("losses 3 first:\n {}", fmt::streamed(loss_.losses[0].head(3)));
+	DEBUG_PRINTLN("losses 9 first:\n {}", fmt::streamed(loss_.losses[0].head(9)));
 
 	DEBUG_PRINTLN("{} : {}", fmt::styled("mean loss", fmt::fg(fmt::color::dark_red)), mean_loss);
 

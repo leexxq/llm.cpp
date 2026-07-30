@@ -12,7 +12,6 @@ protected:
 	using VecBT3C = VecBTC;
 private:
 	THc CausalScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv);
-	THc ScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv);
 	void CausalScaledDotAttentionBackward(VecBT3C& d_inputs ,const VecBTC &d_outputs, int b, int h, const Matf &qq, const Matf &kk, const Matf &vv);
 	
 

@@ -4,6 +4,7 @@
 #include "cutlass/util/device_memory.h"
 #include <cmath>
 #include <limits>
+#include <math_constants.h>
 
 namespace gpt2cuda {
 namespace kernel{
@@ -26,15 +27,13 @@ namespace kernel{
 
         const int lane = threadIdx.x%warpSize;
         float sum = 0;
-        float maxval = std::numeric_limits<float>::min();
-
+        float maxval = -CUDART_INF_F;
 
 
         //compute stride maxval each thread;
         for(int i = 0 ; i < stride / warpSize ; ++ i){
             const float val = inputs[row_offest + lane + i * warpSize];
             maxval = max(maxval,val);
-            sum += expf(val);
         }
 
         // residual
@@ -42,8 +41,9 @@ namespace kernel{
         if(residual_pred){
             const float val = inputs[row_offest + stride - 1 - lane];
             maxval = max(maxval,val);
-            sum += expf(val);
         }
+
+
 
         // if(lane ==0){
         //     printf("lane : %d, warpidx : %d , {%f,%f}\n",lane,warpidx,maxval,sum);
@@ -69,14 +69,29 @@ namespace kernel{
 
         constexpr uint32_t full_mask = 0xFFFFFFFFU;
         for(int offest = warpSize/2 ; offest > 0 ; offest/= 2){
-            sum += __shfl_xor_sync(full_mask,sum,offest);
             maxval = max(__shfl_xor_sync(full_mask,maxval,offest),maxval);
         }
+
+        //compute stride sum each thread;
+        for(int i = 0 ; i < stride / warpSize ; ++i){
+            const float val = inputs[row_offest + lane + i * warpSize];
+            sum += expf(val - maxval);
+        }
+
+        // residual
+        if(residual_pred){
+            const float val = inputs[row_offest + stride - 1 - lane];
+            sum += expf(val - maxval);
+        }
+        
+        for(int offest = warpSize/2 ; offest > 0 ; offest/= 2){
+            sum += __shfl_xor_sync(full_mask,sum,offest);
+        }
+
         // if(lane ==0){
         //     printf("lane : %d, warpidx : %d , {%f,%f}\n",lane,warpidx,maxval,sum);
         // }
 
-        sum *= expf(-maxval);
 
         if(residual_pred){
             const int local_offest = stride - 1 - lane;

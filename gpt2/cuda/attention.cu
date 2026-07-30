@@ -1,5 +1,11 @@
 #include "attention.cuh"
 #include "cute/arch/copy.hpp"
+#include "cute/atom/mma_atom.hpp"
+#include "cute/config.hpp"
+#include "cute/layout.hpp"
+#include "cute/numeric/integral_constant.hpp"
+#include "cute/stride.hpp"
+#include "cute/tensor_impl.hpp"
 #include "cute/util/print.hpp"
 #include "global.cuh"
 #include "cute/tensor.hpp"
@@ -7,12 +13,159 @@
 #include "cute/util/print_tensor.hpp"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/util/device_memory.h"
-
+#include "math_constants.h"
 #include <cassert>
 #include <cstdio>
 namespace gpt2cuda {
 namespace kernel {
 using namespace cute;
+
+// 1 is print 
+#if 0
+	#define debug_thread 0
+
+	#define threadid_print(id,...) do{\
+			if(thread(id)){\
+				printf("[thread:%d]",id);\
+				printf(__VA_ARGS__);\
+			}\
+		}while(false)
+
+	#define threadid_print_tensor(id,desc,tensor) do{\
+			threadid_print(id,desc);\
+			if(thread(id)){\
+				print_tensor(tensor);\
+			}\
+		}while(false)
+
+	#define thread_print(...) threadid_print(debug_thread,__VA_ARGS__)
+
+	#define thread_print_tensor(desc,tensor) threadid_print_tensor(debug_thread,desc,tensor)
+	#define thread_print_tensor_verbose(tensor) thread_print_tensor(#tensor" :",tensor)
+
+
+#else
+	#define thread_print(...)
+	#define thread_print_tensor(x,y)
+	#define thread_print_tensor_verbose(tensor)
+
+#endif
+
+enum class AttentionType{
+	Default,
+	Causal,
+};
+
+template  <int Hc , int N> 
+struct OnlineSoftmax{
+
+
+	constexpr static float klog_2e = 1.4426950409f;
+	constexpr static float kscale = Hc==32 ? 0.176777:0.125f; // 1 / sqrt(32);
+	constexpr static float klog2_scale = klog_2e * kscale;
+
+	// alloc register for sum op and max op;
+	// Tensor tsum_frag = make_tensor<float>(Int<size<1>(row_tSrS)>{});
+	// Tensor tmax_frag = make_tensor<float>(Int<size<1>(row_tSrS)>{});
+
+	using Tensor_reg = decltype(make_tensor<float>(Int<N>{}));
+
+	Tensor_reg tsums_frag;
+	Tensor_reg tmaxs_frag;
+
+	template <bool Is_first, AttentionType Attention, class S_tensor, class O_tensor, class M_tensor >
+	__forceinline__ __device__ void scaled_softmax(S_tensor& row_tSrS, O_tensor& row_tOrO,M_tensor& row_identity_coord){
+
+		CUTE_STATIC_ASSERT_V(size<1>(row_tOrO) == size<1>(row_tSrS));
+
+
+		// int i = get<0>(row_mask(2,1)) , j = get<1>(row_mask(2,1));
+		// thread_print("row_mask(2,1) : (i : %d , j : %d) \n" , i, j);
+
+
+
+		CUTE_UNROLL
+		for (int r = 0; r < size<1>(row_tSrS); ++r) {
+			float tmax_frag_new = -CUDART_INF_F;
+
+			CUTE_UNROLL
+			for (int c = 0; c < size<0>(row_tSrS); ++c) {
+				// per thread per max op
+				if constexpr (Attention == AttentionType::Causal) {
+					auto [i,j] = row_identity_coord(c,r);
+					tmax_frag_new = j > i ? tmax_frag_new :  max(tmax_frag_new, row_tSrS(c, r));
+				}else {
+					tmax_frag_new = max(tmax_frag_new, row_tSrS(c, r));
+				}
+			}
+
+			// quad reduce max
+			CUTE_UNROLL
+			for (int off = 1; off < 4; off <<= 1) {
+				tmax_frag_new = max(__shfl_xor_sync(0xFFFFFFFFU, tmax_frag_new, off), tmax_frag_new);
+			}
+
+			if constexpr (!Is_first) {
+				tmax_frag_new = max(tmaxs_frag(r), tmax_frag_new);
+			}
+
+			// scale_softmax : softmax(QK^T);
+			CUTE_UNROLL
+			for (int c = 0; c < size<0>(row_tSrS); ++c) {
+				if constexpr (Attention == AttentionType::Causal) {
+					auto [i,j] = row_identity_coord(c,r);
+					row_tSrS(c, r) = j > i ? 0.f : exp2f(klog2_scale * (row_tSrS(c, r) - tmax_frag_new));
+				}else {
+					row_tSrS(c, r) = exp2f(klog2_scale * (row_tSrS(c, r) - tmax_frag_new));
+				}
+			}
+
+
+			float tsum_frag_new = 0.f;
+
+
+			CUTE_UNROLL
+			for (int c = 0; c < size<0>(row_tSrS); ++c) {
+				// per thread sum
+				tsum_frag_new += row_tSrS(c, r);
+			}
+
+			// quad reduce sum
+			CUTE_UNROLL
+			for (int off = 1; off < 4; off <<= 1) {
+				tsum_frag_new += __shfl_xor_sync(0xFFFFFFFFU, tsum_frag_new, off);
+			}
+
+			// per thread sum
+			if constexpr (!Is_first) {
+				float correction = exp2f(klog2_scale * (tmaxs_frag(r) - tmax_frag_new));
+				tsum_frag_new += correction * tsums_frag(r);
+				// scale pre o
+				CUTE_UNROLL
+				for (int c = 0; c < size<0>(row_tOrO); ++c) {
+					row_tOrO(c, r) = correction * row_tOrO(c, r);
+				}
+			}
+
+			tmaxs_frag(r) = tmax_frag_new;
+			tsums_frag(r) = tsum_frag_new;
+		}
+	}
+
+	template <class O_tensor>
+	__forceinline__ __device__ void normalize_scale_o(O_tensor& row_tOrO) {
+		CUTE_UNROLL
+		for (int r = 0; r < size<1>(row_tOrO); ++r) {
+			float norm = 1.f/ tsums_frag(r);
+			for (int c = 0; c < size<0>(row_tOrO); ++c) {
+				row_tOrO(c, r) = row_tOrO(c, r) * norm;
+			}
+		}
+	}
+
+
+};
+
 
 template <class To_type, class Engine, class Layout>
 __forceinline__ __device__ auto convert_type(Tensor<Engine, Layout> const &tensor) {
@@ -29,109 +182,9 @@ __forceinline__ __device__ auto convert_type(Tensor<Engine, Layout> const &tenso
 	return target;
 }
 
-template <class O_tensor, class Sum_tensor>
-__forceinline__ __device__ auto normalize_scale_o(O_tensor& row_tOrO, const Sum_tensor& tsum_frag) {
-	CUTE_UNROLL
-	for (int r = 0; r < size<1>(row_tOrO); ++r) {
-		float norm = 1.f/ tsum_frag(r);
-		for (int c = 0; c < size<0>(row_tOrO); ++c) {
-			row_tOrO(c, r) = row_tOrO(c, r) * norm;
-		}
-	}
-}
-
-template <bool Is_first, class S_tensor, class O_tensor, class Max_tensor, class Sum_tensor>
-__forceinline__ __device__ auto scaled_softmax(S_tensor& row_tSrS, O_tensor& row_tOrO, Max_tensor& tmaxs_frag, Sum_tensor& tsums_frag) {
-	constexpr float klog_2e = 1.442695;
-	constexpr float kscale = 0.176777; // 1 / sqrt(32);
-	constexpr float klog2_scale = klog_2e * kscale;
-
-	CUTE_STATIC_ASSERT_V(size<1>(row_tOrO) == size<1>(row_tSrS));
-
-	CUTE_UNROLL
-	for (int r = 0; r < size<1>(row_tSrS); ++r) {
-		float tmax_frag_new;
-
-		tmax_frag_new = row_tSrS(0, r);
-
-		CUTE_UNROLL
-		for (int c = 1; c < size<0>(row_tSrS); ++c) {
-			// per thread per sum
-			tmax_frag_new = max(tmax_frag_new, row_tSrS(c, r));
-		}
-
-		// quad reduce max
-		CUTE_UNROLL
-		for (int off = 1; off < 4; off <<= 1) {
-			tmax_frag_new = max(__shfl_xor_sync(0xFFFFFFFFU, tmax_frag_new, off), tmax_frag_new);
-		}
-
-		if constexpr (!Is_first) {
-			tmax_frag_new = max(tmaxs_frag(r), tmax_frag_new);
-		}
-
-		// scale_softmax : softmax(QK^T);
-		CUTE_UNROLL
-		for (int c = 0; c < size<0>(row_tSrS); ++c) {
-			row_tSrS(c, r) = exp2f(klog2_scale * (row_tSrS(c, r) - tmax_frag_new));
-		}
 
 
-		float tsum_frag_new = 0.f;
 
-
-		CUTE_UNROLL
-		for (int c = 0; c < size<0>(row_tSrS); ++c) {
-			// per thread sum
-			tsum_frag_new += row_tSrS(c, r);
-		}
-
-		// quad reduce sum
-		for (int off = 1; off < 4; off <<= 1) {
-			tsum_frag_new += __shfl_xor_sync(0xFFFFFFFFU, tsum_frag_new, off);
-		}
-
-		// per thread sum
-		if constexpr (!Is_first) {
-			float correction = exp2f(klog2_scale * (tmaxs_frag(r) - tmax_frag_new));
-			tsum_frag_new += correction * tsums_frag(r);
-            // scale pre o
-			CUTE_UNROLL
-			for (int c = 0; c < size<0>(row_tOrO); ++c) {
-				row_tOrO(c, r) = correction * row_tOrO(c, r);
-			}
-		}
-
-		tmaxs_frag(r) = tmax_frag_new;
-		tsums_frag(r) = tsum_frag_new;
-	}
-    
-
-	// if(thread0()){
-	//     print("per thread : tmax_frag_");
-	//     print_tensor(tmax_frag);
-	// }
-
-	// if(thread0()){
-	//     print("reduce : tmax_frag_");
-	//     print_tensor(tmax_frag);
-	// }
-
-	// if(thread0()){
-	//     print("scale_softmax : row_tSrs_");
-	//     print_tensor(row_tSrS);
-	// }
-
-	// if(thread0()){
-	//     print("per thread tsum_frag_");
-	//     print_tensor(tsum_frag);
-	// }
-
-	// if(thread0()){
-	//     print("reduce : tsum_frag_");
-	//     print_tensor(tsums_frag);
-	// }
-}
 
 // Here, "row" means that I place a row of data owned by a thread at the first index,
 // while the second index corresponds to other rows.
@@ -145,42 +198,7 @@ __forceinline__ __device__ auto convert_C_to_row(Tensor<Engine,Layout> & ctensor
 	return make_tensor(ctensor.data(),zipped_divide(ctensor.layout(), row_tiler)); //(nums_pre_row,rows)
 }
 
-#if 0
-	#define debug_threads 0
 
-	#define threadid_print(id,...) do{\
-			if(thread(id)){\
-				printf("[thread:%d]",id);\
-				printf(__VA_ARGS__);\
-			}\
-		}while(false)
-
-	#define threadid_print_tensor(id,desc,tensor) do{\
-			threadid_print(id,desc);\
-			if(thread(id)){\
-				print_tensor(tensor);\
-			}\
-		}while(false)
-
-	#define thread_print(...) do {\
-			int debug_ids[] = {debug_threads};\
-			for(auto & id : debug_ids){\
-				threadid_print(id,__VA_ARGS__);\
-			}\
-		}while(false)
-
-	#define thread_print_tensor(desc,tensor) do{\
-		int debug_ids[] = {debug_threads};\
-		for(auto & id : debug_ids){\
-			threadid_print_tensor(id,desc,tensor);\
-		}\
-	}while(false)
-
-
-#else
-	#define thread_print(...)
-	#define thread_print_tensor(x,y)
-#endif
 
 
 // flash attention v2,see also https://arxiv.org/pdf/2307.08691
@@ -190,13 +208,12 @@ template <class TQ, class LayoutQ, class TiledCopyQ,
 		class TV, class LayoutV, class TiledCopyV,
 		class TO, class LayoutO, class TiledCopyO,
 		class TiledMmaS, class TiledMmaO,
-		int Br = 64, int Bc = 64>
+		int Br = 64, int Bc = 64,int Hc = 32,AttentionType Attention= AttentionType::Default>
 __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy_Q,
 		TK const *K, LayoutK L_K, TiledCopyK copy_K,
 		TV const *V, LayoutV L_V, TiledCopyV copy_V,
 		TO *O, LayoutO L_O, TiledCopyO copy_O,
 		TiledMmaS mmaS, TiledMmaO mmaO) {
-	auto Hc = Int<32>{};
 
 	__shared__ float shared_memQ[Br * Hc];
 
@@ -204,28 +221,37 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 	__shared__ cute::half_t shared_memV[Bc * Hc];
 
+
 	auto block_Q = make_tensor(Q, L_Q)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_K = make_tensor(K, L_K)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_V = make_tensor(V, L_V)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_O = make_tensor(O, L_O)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
+
+	Tensor identity_coord_tensor = make_identity_tensor(make_shape(size<0>(block_Q),size<0>(block_K))); //(T,T)
+	
+	
 
 	auto Tr =  size<0>(block_Q) / Br;
 	auto Tc =  size<0>(block_K) / Bc;
 	// auto Tr = 1;
 	// auto Tc = 1;
 
+	thread_print("Tr: %d, Tc : %d \n",Tr,Tc);
 	for (int tr = 0; tr < Tr; ++tr) {
 		Tensor gQ = local_tile(block_Q, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
 		Tensor gO = local_tile(block_O, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
+
 		//alloc fragment for S
 		Tensor tSrS = partition_fragment_C(mmaS, make_shape(Int<Br>{}, Int<Bc>{}));
 
 		// retile the register file layout (due per thread ownning multi row datas, we each calculate them.)
 		Tensor row_tSrS = convert_C_to_row(tSrS); //(nums_pre_row,rows)
 
-		// alloc register for sum op and max op;
-		Tensor tsum_frag = make_tensor<float>(Int<size<1>(row_tSrS)>{});
-		Tensor tmax_frag = make_tensor<float>(Int<size<1>(row_tSrS)>{});
+
+		ThrMMA thr_mmaS = mmaS.get_slice(threadIdx.x);
+
+
+		OnlineSoftmax<Hc, size<1>(row_tSrS)> online_softmax;
 
 		//alloc fragment for O
 		Tensor tOrO = partition_fragment_C(mmaO, make_shape(Int<Br>{}, Int<Hc>{}));
@@ -236,6 +262,20 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 
 		for (int tc = 0; tc < Tc; ++tc) {
+			Tensor cta_identity_coord_tensor = local_tile(identity_coord_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(tr,tc));
+
+			Tensor identity_coord_S_frag = thr_mmaS.partition_C(cta_identity_coord_tensor);
+			Tensor row_identity_coord_S_frag = convert_C_to_row(identity_coord_S_frag);
+
+			thread_print_tensor_verbose(identity_coord_S_frag);
+			thread_print_tensor_verbose(row_identity_coord_S_frag);
+
+			if constexpr (Attention == AttentionType::Causal) {
+				// one block's bottom left not at mask
+				if(tr * Br + Br - 1 < tc * Bc ){
+					break;
+				}
+			}
 
 			thread_print("tr:%d,tc:%d\n",tr,tc);
 
@@ -272,6 +312,7 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 			//wait q and k
 			cp_async_wait<0>();
+			//!! must all thread can see smem latest 
 			__syncthreads();
 
 			ThrMMA thr_mmaS = mmaS.get_slice(threadIdx.x);
@@ -303,6 +344,7 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			thread_print_tensor("tSrK:", tSrK);
 			
 
+
 			// S need to be clear
 			clear(tSrS);
 			// S = QK^T
@@ -319,13 +361,13 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 			// online softmax
 			if (tc == 0) {
-				scaled_softmax<true>(row_tSrS, row_tOrO, tmax_frag, tsum_frag);
+				online_softmax.template scaled_softmax<true,Attention>(row_tSrS,row_tOrO,row_identity_coord_S_frag);
 			} else {
-				scaled_softmax<false>(row_tSrS, row_tOrO, tmax_frag, tsum_frag);
+				online_softmax.template scaled_softmax<false,Attention>(row_tSrS,row_tOrO,row_identity_coord_S_frag);
 			}
 
-			thread_print_tensor("tsum_frag:",tsum_frag);
-			thread_print_tensor("tmax_frag:",tmax_frag);
+			thread_print_tensor("tsum_frag:",online_softmax.tsums_frag);
+			thread_print_tensor("tmax_frag:",online_softmax.tmaxs_frag);
 
 			thread_print_tensor("tSrS(after scaled_softmax , S = e^(S - m) ) : ",tSrS);
 			thread_print_tensor("row_tSrS (after scaled_softmax , S = e^(S - m) ) : ",row_tSrS);
@@ -429,7 +471,9 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 		}
 		// scale o ...
-		normalize_scale_o(row_tOrO, tsum_frag);
+		
+		// normalize_scale_o(row_tOrO, tsum_frag);
+		online_softmax.template normalize_scale_o<decltype(row_tOrO)>(row_tOrO);
 
 		thread_print_tensor("tOrO(after normalize scale ...):",tOrO);
 
@@ -487,18 +531,25 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 	}
 }
 
+template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
 void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
 
 	assert(C3 % 3 == 0);
 	int C = C3 / 3;
 	assert(C % NH == 0);
-	int Hc = C / NH;
-	assert(Hc == 32);
+	assert(C / NH  == Hc);
+	assert(T / Br  > 0);
+	assert(T % Br == 0);
+	assert(T / Bc  > 0);
+	assert(T % Bc == 0);
+	CUTE_STATIC_ASSERT_V(bool_constant<Hc == 32 || Hc == 64>(),"Hc is not supported");
+	
+	
 
-	auto L_Q = make_layout(make_shape(B, NH, T, _32{}), make_stride(T * C3, _32{}, C3, Int<1>{}));
-	auto L_K = make_layout(make_shape(B, NH, T, _32{}), make_stride(T * C3, _32{}, C3, Int<1>{}));
-	auto L_V = make_layout(make_shape(B, NH, T, _32{}), make_stride(T * C3, _32{}, C3, Int<1>{}));
-	auto L_O = make_layout(make_shape(B, NH, T, _32{}), make_stride(T * C, _32{}, C, Int<1>{}));
+	auto L_Q = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C3, Int<Hc>{}, C3, Int<1>{}));
+	auto L_K = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C3, Int<Hc>{}, C3, Int<1>{}));
+	auto L_V = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C3, Int<Hc>{}, C3, Int<1>{}));
+	auto L_O = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C, Int<Hc>{}, C, Int<1>{}));
 
 	TiledCopy copyQ = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cutlass::uint128_t>, float>{},
 			Layout<Shape<_16, _8>, Stride<_8, _1>>{},
@@ -516,11 +567,9 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 			Layout<Shape<_16, _8>, Stride<_8, _1>>{},
 			Layout<Shape<_1, _4>>{});
 
-	// TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{},Layout<Shape<Shape<_4,_4>,_1,_1>,Stride<Stride<_0,_1>,_1,_1>>{},Tile<_256,_1/*Layout<Shape<_2,_4,_4>,Stride<_1,_8,_2>>*/,_8>{});
-	// TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{},Layout<Shape<_4,_1,_1>>{},Tile<_64,Layout<Shape<_2,_4,_4>,Stride<_1,_8,_2>>,_8>{});
-	TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<_64, _64, _8>{});
+	TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32TF32TF32F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<Int<Br>, Int<Bc>, _8>{});
 
-	TiledMMA mmaO = make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<_64, _32, _16>{});
+	TiledMMA mmaO = make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{}, Layout<Shape<_4, _1, _1>>{}, Tile<Int<Br>, Int<Hc>, _16>{});
 
 	// print(copyQ);
 	// print(copyK);
@@ -537,7 +586,9 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 			float, decltype(L_K), decltype(copyK),
 			float, decltype(L_V), decltype(copyV),
 			float, decltype(L_O), decltype(copyO),
-			decltype(mmaS), decltype(mmaO)>;
+			decltype(mmaS), decltype(mmaO),
+			Br,Bc,Hc,Attention>;
+
 
 	
 	dim3 dimGrid(B,NH);
@@ -546,9 +597,10 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 }
 
 } //namespace kernel
+
 using DAlloc = cutlass::device_memory::allocation<float>;
 
-void BatchAttentionForward(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
+void BatchAttentionForward(float *outputs, float const *inputs, kernel::AttentionType Attention , int B, int T, int C3, int NH) {
 	using namespace cute;
 	assert(C3 % 3 == 0);
 	auto C = C3 / 3;
@@ -559,12 +611,46 @@ void BatchAttentionForward(float *outputs, float const *inputs, int B, int T, in
 	outputs_d.copy_from_host(outputs);
 	inputs_d.copy_from_host(inputs);
 
-	kernel::AttentionForwardCUDA(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+	if(C/NH == 32){
+		if(Attention == kernel::AttentionType::Default){
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,32>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+		}else if(Attention == kernel::AttentionType::Causal){
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,32>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+		}else{
+			std::cerr << "fatal: " << static_cast<int>(Attention) << " not exists!"<< std::endl;
+			exit(1);
+		}
+	}else if(C/NH == 64){
+		if(Attention == kernel::AttentionType::Default){
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,64>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+		}else if(Attention == kernel::AttentionType::Causal){
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,64>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+		}else{
+
+		}
+	}else
+	{
+		std::cerr << "not supported attention shape D = " << C/NH << std::endl;
+		exit(1);
+	}
 
 	outputs_d.copy_to_host(outputs);
 }
 
 void BatchAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs, int B, int T, int C3, int NH) {
 }
+
+void BatchAttentionForward(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
+	BatchAttentionForward(outputs,inputs,kernel::AttentionType::Default , B,T,C3,NH);
+}
+
+void BatchCausalAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs, int B, int T, int C3, int NH) {
+}
+
+
+void BatchCausalAttentionForward(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
+	BatchAttentionForward(outputs,inputs,kernel::AttentionType::Causal , B,T,C3,NH);
+}
+
 
 } //namespace gpt2cuda

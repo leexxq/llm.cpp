@@ -48,7 +48,7 @@ namespace gpt2cuda{
         StdVecf l_ln2_gamma;   //(C)
         StdVecf l_ln2_beta ;   //(C)
 
-        StdVecf l_attproj_weight;//(T,C)
+        StdVecf l_attproj_weight;//(C,C)
         StdVecf l_attproj_bias;//(C)
 
         StdVecf l_qkv_weight;    //(3C,C)

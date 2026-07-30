@@ -251,8 +251,7 @@ void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets){
     if(targets_.size() > 0 ) {
         BatchCrossEntropyForward(losses.data(),probs_.data(),targets_.data(),B,T,Vp);
         mean_loss = std::optional<float>(0.0f);
-        std::accumulate(losses.begin(),losses.end(),mean_loss.value());
-        mean_loss.value() /= B*T;
+        mean_loss = std::accumulate(losses.begin(),losses.end(),mean_loss.value()) / (B*T);
     }else {
         mean_loss = std::nullopt;
     }
