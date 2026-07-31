@@ -21,7 +21,9 @@ void Layer::Init(size_t B, size_t T, size_t C, size_t V, size_t NH){
     l_qkv_bias = gpt2cuda::makeVec<float>({3*C});
 
     l_atty_ = gpt2cuda::makeVec<float>({B,T,C});
-    
+    l_logsumexp_ = gpt2cuda::makeVec<float>({B,NH,T});
+
+   
     l_attproj_ = gpt2cuda::makeVec<float>({B,T,C});
     l_attproj_weight = gpt2cuda::makeVec<float>({C,C});
     l_attproj_bias = gpt2cuda::makeVec<float>({C});
@@ -87,7 +89,7 @@ void Layer::Forward(StdVecf& residual3 , const StdVecf &residual){
 
     BatchMatmulNTForward(l_qkv_.data(), l_ln1_.data(), l_qkv_weight.data(), l_qkv_bias.data(), B_,T_,C_,3*C_);
 
-    BatchCausalAttentionForward(l_atty_.data(),l_qkv_.data(),B_,T_,3 * C_,NH_);
+    BatchCausalAttentionForward(l_atty_.data(),l_logsumexp_.data(),l_qkv_.data(),B_,T_,3 * C_,NH_);
 
     BatchMatmulNTForward(l_attproj_.data(),l_atty_.data(),l_attproj_weight.data(),l_attproj_bias.data(),B_,T_,C_,C_); 
 
@@ -127,7 +129,7 @@ void gpt2cuda::Layer::Backward(StdVecf& dresidual , const StdVecf&d_outputs, con
     BatchMatmulNTBackward(dl_atty.data(), dl_attproj_weight.data(),dl_attproj_bias.data(),dl_attproj.data(),l_atty_.data(),l_attproj_weight.data(),B_,T_,C_,C_);
 
 
-    BatchAttentionBackward(dl_qkv.data(),dl_atty.data(),l_qkv_.data(),B_,T_,3*C_,NH_);
+    BatchAttentionBackward(dl_qkv.data(),dl_atty.data(),l_qkv_.data(),l_logsumexp_.data(),B_,T_,3*C_,NH_);
 
 
     BatchMatmulNTBackward(dl_ln1.data(), dl_qkv_weight.data(), dl_qkv_bias.data(),dl_qkv.data(),l_ln1_.data(),l_qkv_weight.data(),B_,T_,C_,3*C_);

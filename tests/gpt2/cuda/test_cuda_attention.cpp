@@ -19,6 +19,8 @@ class TestAttention : public Attention{
 		VecBHTT pre_att_no_scaled;
 		VecBHTT att_no_scaled;
 		VecBHTT output_no_scaled;
+		using VecBHT = VecBTC;
+		VecBHT logsumexp;
 	private:
 
 		Attention::THc ScaledDotAttention(int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
@@ -42,6 +44,7 @@ class TestAttention : public Attention{
 					float expsum = att[b][h].row(r).sum();
 					float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
 					att[b][h].row(r) *= expsum_inv;
+					logsumexp[b](h,r) = maxval + std::log(expsum);
 				}
 			}
 
@@ -56,7 +59,8 @@ class TestAttention : public Attention{
 		TestAttention(size_t B, size_t T, size_t C, size_t NH) : Attention(B,T,C,NH),
 			pre_att_no_scaled(makeZero(B, NH, T, T)),
 			att_no_scaled(makeZero(B, NH, T, T)),
-			output_no_scaled(makeZero(B, NH, T, T))
+			output_no_scaled(makeZero(B, NH, T, T)),
+			logsumexp(makeZero(B, NH,T))
 		{
 	
 		}
@@ -119,10 +123,11 @@ TEST(CudaAttention,flash_attention_f32_forward1){
 
 
     StdVec<float> outputs_vec(B*T*C);
-
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		
+        gpt2cuda::BatchAttentionForward(outputs_vec.data(),logsumexp_vec.data(), inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
@@ -194,8 +199,26 @@ TEST(CudaAttention,flash_attention_f32_forward1){
 	// 	}
 	// }
 
+	// std::cout << "logsumexp ( m + log(l) )" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.logsumexp[b].row(h) << std::endl;
+	// 	}
+	// }
 
-	// 
+	// logsumexp test
+	for(int b = 0 ; b < B ; ++b){
+		auto logsumexp_vec_map = Eigen::Map<MatfRow>(logsumexp_vec.data() + b * NH * T,NH,T);
+		EXPECT_TRUE(logsumexp_vec_map.isApprox(att.logsumexp[b], 0.01f)) 
+			<< "---gpu---\n"<<logsumexp_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << att.logsumexp[b].block<3,3>(0,0) <<std::endl ;
+	}
+
+
+
+	// result test
 	for(int b = 0 ; b < B ; ++b){
 		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
 		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
@@ -237,15 +260,15 @@ TEST(CudaAttention,flash_attention_f32_forward2){
 
 
     StdVec<float> outputs_vec(B*T*C);
-
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		
+        gpt2cuda::BatchAttentionForward(outputs_vec.data(),logsumexp_vec.data(), inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
-
 
 	// std::cout << "outputs_vec : " << std::endl;
 	// for(int b = 0 ; b < B ; ++b){
@@ -311,6 +334,24 @@ TEST(CudaAttention,flash_attention_f32_forward2){
 	// 		std::cout << att.output_no_scaled[b][h] << std::endl;
 	// 	}
 	// }
+
+
+	// std::cout << "logsumexp ( m + log(l) )" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.logsumexp[b].row(h) << std::endl;
+	// 	}
+	// }
+
+	// logsumexp test
+	for(int b = 0 ; b < B ; ++b){
+		auto logsumexp_vec_map = Eigen::Map<MatfRow>(logsumexp_vec.data() + b * NH * T,NH,T);
+		EXPECT_TRUE(logsumexp_vec_map.isApprox(att.logsumexp[b], 0.01f)) 
+			<< "---gpu---\n"<<logsumexp_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << att.logsumexp[b].block<3,3>(0,0) <<std::endl ;
+	}
 
 
 	// 
@@ -356,14 +397,15 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 
     StdVec<float> outputs_vec(B*T*C);
 
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		
+        gpt2cuda::BatchAttentionForward(outputs_vec.data(),logsumexp_vec.data(), inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
-
 
 	// std::cout << "outputs_vec : " << std::endl;
 	// for(int b = 0 ; b < B ; ++b){
@@ -429,6 +471,24 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 	// 		std::cout << att.output_no_scaled[b][h] << std::endl;
 	// 	}
 	// }
+
+
+	// std::cout << "logsumexp ( m + log(l) )" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.logsumexp[b].row(h) << std::endl;
+	// 	}
+	// }
+
+	// logsumexp test
+	for(int b = 0 ; b < B ; ++b){
+		auto logsumexp_vec_map = Eigen::Map<MatfRow>(logsumexp_vec.data() + b * NH * T,NH,T);
+		EXPECT_TRUE(logsumexp_vec_map.isApprox(att.logsumexp[b], 0.01f)) 
+			<< "---gpu---\n"<<logsumexp_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << att.logsumexp[b].block<3,3>(0,0) <<std::endl ;
+	}
 
 
 	// 
@@ -473,15 +533,15 @@ TEST(CudaAttention,flash_attention_f32_forward4){
 
 
     StdVec<float> outputs_vec(B*T*C);
-
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+		
+        gpt2cuda::BatchAttentionForward(outputs_vec.data(),logsumexp_vec.data(), inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
-
 
 	// std::cout << "outputs_vec : " << std::endl;
 	// for(int b = 0 ; b < B ; ++b){
@@ -548,6 +608,23 @@ TEST(CudaAttention,flash_attention_f32_forward4){
 	// 	}
 	// }
 
+	// std::cout << "logsumexp ( m + log(l) )" << std::endl;
+	// for(int b = 0 ; b < B ; ++b){
+	// 	std::cout << "--------" << b << "-------\n";
+	// 	for(int h = 0; h < NH; ++h){
+	// 		std::cout << "-------"<< h << "--------\n";
+	// 		std::cout << att.logsumexp[b].row(h) << std::endl;
+	// 	}
+	// }
+
+	// logsumexp test
+	for(int b = 0 ; b < B ; ++b){
+		auto logsumexp_vec_map = Eigen::Map<MatfRow>(logsumexp_vec.data() + b * NH * T,NH,T);
+		EXPECT_TRUE(logsumexp_vec_map.isApprox(att.logsumexp[b], 0.01f)) 
+			<< "---gpu---\n"<<logsumexp_vec_map.block<3,3>(0,0) << std::endl 
+			<< " ---cpu--- \n" << att.logsumexp[b].block<3,3>(0,0) <<std::endl ;
+	}
+
 
 	// 
 	for(int b = 0 ; b < B ; ++b){
@@ -590,13 +667,15 @@ TEST(CudaAttention,flash_attention_casual_f32_forward1){
 
     StdVec<float> outputs_vec(B*T*C);
 
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), logsumexp_vec.data(),inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
+
 
 
 	for(int b = 0 ; b < B ; ++b){
@@ -641,10 +720,10 @@ TEST(CudaAttention,flash_attention_casual_f32_forward2){
 
 
     StdVec<float> outputs_vec(B*T*C);
-
+    StdVec<float> logsumexp_vec(B*T);
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), inputs_vec.data(), B, T, C3,NH);
+        gpt2cuda::BatchCausalAttentionForward(outputs_vec.data(), logsumexp_vec.data(),inputs_vec.data(), B, T, C3,NH);
 		auto end= std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;

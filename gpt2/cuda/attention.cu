@@ -1,11 +1,5 @@
 #include "attention.cuh"
-#include "cute/arch/copy.hpp"
-#include "cute/atom/mma_atom.hpp"
-#include "cute/config.hpp"
-#include "cute/layout.hpp"
 #include "cute/numeric/integral_constant.hpp"
-#include "cute/stride.hpp"
-#include "cute/tensor_impl.hpp"
 #include "cute/util/print.hpp"
 #include "global.cuh"
 #include "cute/tensor.hpp"
@@ -21,7 +15,7 @@ namespace kernel {
 using namespace cute;
 
 // 1 is print 
-#if 0
+#if 1
 	#define debug_thread 0
 
 	#define threadid_print(id,...) do{\
@@ -77,6 +71,7 @@ struct OnlineSoftmax{
 	__forceinline__ __device__ void scaled_softmax(S_tensor& row_tSrS, O_tensor& row_tOrO,M_tensor& row_identity_coord){
 
 		CUTE_STATIC_ASSERT_V(size<1>(row_tOrO) == size<1>(row_tSrS));
+		CUTE_STATIC_ASSERT_V(size<1>(row_tOrO) == size<1>(row_identity_coord));
 
 
 		// int i = get<0>(row_mask(2,1)) , j = get<1>(row_mask(2,1));
@@ -163,6 +158,17 @@ struct OnlineSoftmax{
 		}
 	}
 
+	template<class L_tensor, class M_tensor>
+	__forceinline__ __device__ void write_logsumexp(L_tensor& ltensor , const M_tensor& row_identity_coord) {
+		if(threadIdx.x % 4 == 0){
+			CUTE_UNROLL
+			for(int r = 0 ; r < size<1>(row_identity_coord); ++r){
+				auto [i,j] = row_identity_coord(0,r);
+				ltensor(i) = tmaxs_frag(r) * kscale + logf(tsums_frag(r));
+			}
+		}
+	}
+
 
 };
 
@@ -207,12 +213,14 @@ template <class TQ, class LayoutQ, class TiledCopyQ,
 		class TK, class LayoutK, class TiledCopyK,
 		class TV, class LayoutV, class TiledCopyV,
 		class TO, class LayoutO, class TiledCopyO,
+		class TL, class LayoutL, 
 		class TiledMmaS, class TiledMmaO,
 		int Br = 64, int Bc = 64,int Hc = 32,AttentionType Attention= AttentionType::Default>
 __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy_Q,
 		TK const *K, LayoutK L_K, TiledCopyK copy_K,
 		TV const *V, LayoutV L_V, TiledCopyV copy_V,
 		TO *O, LayoutO L_O, TiledCopyO copy_O,
+		TL *L, LayoutL L_L,
 		TiledMmaS mmaS, TiledMmaO mmaO) {
 
 	__shared__ float shared_memQ[Br * Hc];
@@ -226,6 +234,7 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 	auto block_K = make_tensor(K, L_K)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_V = make_tensor(V, L_V)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
 	auto block_O = make_tensor(O, L_O)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
+	auto block_L = make_tensor(L, L_L)(blockIdx.x, blockIdx.y,_); //(T)
 
 	Tensor identity_coord_tensor = make_identity_tensor(make_shape(size<0>(block_Q),size<0>(block_K))); //(T,T)
 	
@@ -240,7 +249,10 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 	for (int tr = 0; tr < Tr; ++tr) {
 		Tensor gQ = local_tile(block_Q, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
 		Tensor gO = local_tile(block_O, make_tile(Int<Br>{}, Int<Hc>{}), make_coord(tr, 0));
+		Tensor gL = local_tile(block_L, make_tile(Int<Br>{}), make_coord(tr));
 
+
+		ThrMMA thr_mmaS = mmaS.get_slice(threadIdx.x);
 		//alloc fragment for S
 		Tensor tSrS = partition_fragment_C(mmaS, make_shape(Int<Br>{}, Int<Bc>{}));
 
@@ -248,11 +260,11 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 		Tensor row_tSrS = convert_C_to_row(tSrS); //(nums_pre_row,rows)
 
 
-		ThrMMA thr_mmaS = mmaS.get_slice(threadIdx.x);
 
 
 		OnlineSoftmax<Hc, size<1>(row_tSrS)> online_softmax;
 
+		ThrMMA thr_mmaO = mmaO.get_slice(threadIdx.x);
 		//alloc fragment for O
 		Tensor tOrO = partition_fragment_C(mmaO, make_shape(Int<Br>{}, Int<Hc>{}));
 		clear(tOrO);
@@ -261,9 +273,11 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 		Tensor row_tOrO = convert_C_to_row(tOrO); //(nums_pre_row,rows)
 
 
-		for (int tc = 0; tc < Tc; ++tc) {
-			Tensor cta_identity_coord_tensor = local_tile(identity_coord_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(tr,tc));
 
+
+		for (int tc = 0; tc < Tc; ++tc) {
+
+			Tensor cta_identity_coord_tensor = local_tile(identity_coord_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(tr,tc));
 			Tensor identity_coord_S_frag = thr_mmaS.partition_C(cta_identity_coord_tensor);
 			Tensor row_identity_coord_S_frag = convert_C_to_row(identity_coord_S_frag);
 
@@ -315,7 +329,7 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			//!! must all thread can see smem latest 
 			__syncthreads();
 
-			ThrMMA thr_mmaS = mmaS.get_slice(threadIdx.x);
+			
 
 			Tensor tSrQ = thr_mmaS.partition_fragment_A(sQ); // (MMA, MMA_Br,MMA_Hc)
 			Tensor tSrK = thr_mmaS.partition_fragment_B(sK); // (MMA, MMA_Br,MMA_Hc)
@@ -417,7 +431,6 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			TiledCopy s2r_copy_VT = make_tiled_copy_B(s2r_atom_V, mmaO);
 			ThrCopy s2r_thr_copy_VT = s2r_copy_VT.get_slice(threadIdx.x);
 
-			ThrMMA thr_mmaO = mmaO.get_slice(threadIdx.x);
 
 			Tensor tVrVT = thr_mmaO.partition_fragment_B(sVT); // (MMA, MMA_Bc,MMA_Hc)
 
@@ -471,11 +484,26 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 		}
 		// scale o ...
-		
 		// normalize_scale_o(row_tOrO, tsum_frag);
-		online_softmax.template normalize_scale_o<decltype(row_tOrO)>(row_tOrO);
+		online_softmax.normalize_scale_o(row_tOrO);
 
 		thread_print_tensor("tOrO(after normalize scale ...):",tOrO);
+
+		Tensor O_identity_coord_tensor = local_tile(identity_coord_tensor,make_tile(Int<Br>{},Int<Hc>{}),make_coord(tr,0));
+		Tensor identity_coord_O_frag = thr_mmaO.partition_C(O_identity_coord_tensor);
+		Tensor row_identity_coord_O_frag = convert_C_to_row(identity_coord_O_frag);
+
+		thread_print_tensor_verbose(identity_coord_O_frag);
+		thread_print_tensor_verbose(row_identity_coord_O_frag);
+		// write L
+		online_softmax.write_logsumexp(gL,row_identity_coord_O_frag);
+
+		__syncthreads();
+		if(thread0()){
+			thread_print_tensor_verbose(gL);
+		}
+
+		
 
 		// copy O to Q for coalease write
 		Layout sO_layout = make_layout(make_shape(Int<Br>{}, Int<Hc>{}), LayoutRight{});
@@ -532,7 +560,7 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 }
 
 template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
-void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
+void AttentionForwardCUDA(float *outputs, float * logsumexp ,float const *inputs, int B, int T, int C3, int NH) {
 
 	assert(C3 % 3 == 0);
 	int C = C3 / 3;
@@ -550,6 +578,7 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 	auto L_K = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C3, Int<Hc>{}, C3, Int<1>{}));
 	auto L_V = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C3, Int<Hc>{}, C3, Int<1>{}));
 	auto L_O = make_layout(make_shape(B, NH, T,Int<Hc>{}), make_stride(T * C, Int<Hc>{}, C, Int<1>{}));
+	auto L_logsumexp = make_layout(make_shape(B,NH,T), make_stride(T * NH, T ,Int<1>{}));
 
 	TiledCopy copyQ = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cutlass::uint128_t>, float>{},
 			Layout<Shape<_16, _8>, Stride<_8, _1>>{},
@@ -586,13 +615,14 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 			float, decltype(L_K), decltype(copyK),
 			float, decltype(L_V), decltype(copyV),
 			float, decltype(L_O), decltype(copyO),
+			float, decltype(L_logsumexp),
 			decltype(mmaS), decltype(mmaO),
 			Br,Bc,Hc,Attention>;
 
 
 	
 	dim3 dimGrid(B,NH);
-	kernel_fptr<<<dimGrid, 128>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, mmaS, mmaO);
+	kernel_fptr<<<dimGrid, 128>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, logsumexp,L_logsumexp,mmaS, mmaO);
     CUDA_CHECK_LAST();
 }
 
@@ -600,31 +630,33 @@ void AttentionForwardCUDA(float *outputs, float const *inputs, int B, int T, int
 
 using DAlloc = cutlass::device_memory::allocation<float>;
 
-void BatchAttentionForward(float *outputs, float const *inputs, kernel::AttentionType Attention , int B, int T, int C3, int NH) {
+void BatchAttentionForward(float *outputs,float * logsumexp , float const *inputs, kernel::AttentionType Attention , int B, int T, int C3, int NH) {
 	using namespace cute;
 	assert(C3 % 3 == 0);
 	auto C = C3 / 3;
 
 	DAlloc outputs_d(B * T * C);
 	DAlloc inputs_d(B * T * C3);
+	DAlloc logsumexp_d(B*NH*T);
 
 	outputs_d.copy_from_host(outputs);
 	inputs_d.copy_from_host(inputs);
+	
 
 	if(C/NH == 32){
 		if(Attention == kernel::AttentionType::Default){
-			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,32>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,32>(outputs_d.get(),logsumexp_d.get(), inputs_d.get(), B, T, C3, NH);
 		}else if(Attention == kernel::AttentionType::Causal){
-			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,32>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,32>(outputs_d.get(),logsumexp_d.get(), inputs_d.get(), B, T, C3, NH);
 		}else{
 			std::cerr << "fatal: " << static_cast<int>(Attention) << " not exists!"<< std::endl;
 			exit(1);
 		}
 	}else if(C/NH == 64){
 		if(Attention == kernel::AttentionType::Default){
-			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,64>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Default,64>(outputs_d.get(),logsumexp_d.get(), inputs_d.get(), B, T, C3, NH);
 		}else if(Attention == kernel::AttentionType::Causal){
-			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,64>(outputs_d.get(), inputs_d.get(), B, T, C3, NH);
+			kernel::AttentionForwardCUDA<kernel::AttentionType::Causal,64>(outputs_d.get(),logsumexp_d.get(), inputs_d.get(), B, T, C3, NH);
 		}else{
 
 		}
@@ -635,21 +667,22 @@ void BatchAttentionForward(float *outputs, float const *inputs, kernel::Attentio
 	}
 
 	outputs_d.copy_to_host(outputs);
+	logsumexp_d.copy_to_host(logsumexp);
 }
 
-void BatchAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs, int B, int T, int C3, int NH) {
+void BatchAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs,float const* logsumexp, int B, int T, int C3, int NH) {
 }
 
-void BatchAttentionForward(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
-	BatchAttentionForward(outputs,inputs,kernel::AttentionType::Default , B,T,C3,NH);
+void BatchAttentionForward(float *outputs, float* logsumexp ,float const *inputs, int B, int T, int C3, int NH) {
+	BatchAttentionForward(outputs,logsumexp,inputs,kernel::AttentionType::Default , B,T,C3,NH);
 }
 
-void BatchCausalAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs, int B, int T, int C3, int NH) {
+void BatchCausalAttentionBackward(float *d_inputs, float const *d_outputs, float const *inputs,float const* logsumexp ,int B, int T, int C3, int NH) {
 }
 
 
-void BatchCausalAttentionForward(float *outputs, float const *inputs, int B, int T, int C3, int NH) {
-	BatchAttentionForward(outputs,inputs,kernel::AttentionType::Causal , B,T,C3,NH);
+void BatchCausalAttentionForward(float *outputs,float* logsumexp , float const *inputs, int B, int T, int C3, int NH) {
+	BatchAttentionForward(outputs,logsumexp,inputs,kernel::AttentionType::Causal , B,T,C3,NH);
 }
 
 

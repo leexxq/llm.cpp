@@ -24,6 +24,7 @@ namespace gpt2cuda{
         StdVecf l_attproj_;     //(B,T,C)
 
         StdVecf l_atty_;        //(B,T,C)
+        StdVecf l_logsumexp_;   //(B,NH,T)
 
         StdVecf l_qkv_;         //(B,T,3C)
 
