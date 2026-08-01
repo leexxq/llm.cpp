@@ -129,7 +129,7 @@ void gpt2cuda::Layer::Backward(StdVecf& dresidual , const StdVecf&d_outputs, con
     BatchMatmulNTBackward(dl_atty.data(), dl_attproj_weight.data(),dl_attproj_bias.data(),dl_attproj.data(),l_atty_.data(),l_attproj_weight.data(),B_,T_,C_,C_);
 
 
-    BatchAttentionBackward(dl_qkv.data(),dl_atty.data(),l_qkv_.data(),l_logsumexp_.data(),B_,T_,3*C_,NH_);
+    BatchAttentionBackward(dl_qkv.data(),dl_atty.data(),l_atty_.data(),l_qkv_.data(),l_logsumexp_.data(),B_,T_,3*C_,NH_);
 
 
     BatchMatmulNTBackward(dl_ln1.data(), dl_qkv_weight.data(), dl_qkv_bias.data(),dl_qkv.data(),l_ln1_.data(),l_qkv_weight.data(),B_,T_,C_,3*C_);
