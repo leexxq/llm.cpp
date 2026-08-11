@@ -63,6 +63,7 @@ if(ENABLE_CUDA)
 		PRIVATE Eigen3::Eigen
 		PRIVATE CLI11::CLI11
 	)
+
 endif()
 
 

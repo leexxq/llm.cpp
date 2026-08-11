@@ -1,7 +1,7 @@
 #include "cute/util/debug.hpp"
 #include "cutlass/util/device_memory.h"
 #include "layernorm.cuh"
-#include "global.cuh"
+#include "error.cuh"
 #include <cub/cub.cuh>
 #include <cassert>
 #include <cstdint>

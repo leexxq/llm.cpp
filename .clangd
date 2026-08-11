@@ -20,6 +20,9 @@ CompileFlags:
     - "-D__CUDA_ARCH_FEAT_SM90_ALL"
     - "-Wno-invalid-constexpr"
   Remove:
+    - "--keep"
+    - "--time"
+    - "--time=*"
 # strip CUDA fatbin args
     - "-Xfatbin*"
 # strip CUDA arch flags

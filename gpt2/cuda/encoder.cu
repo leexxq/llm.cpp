@@ -1,4 +1,4 @@
-#include "cuda/global.cuh"
+#include "error.cuh"
 #include "cutlass/util/exceptions.h"
 #include "encoder.cuh"
 #include "cutlass/util/device_memory.h"

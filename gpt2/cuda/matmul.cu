@@ -1,25 +1,12 @@
-
-#include "cutlass/arch/arch.h"
-#include "cutlass/arch/mma.h"
 #include "cutlass/cutlass.h"
-#include "cutlass/epilogue/thread/linear_combination_gelu.h"
-#include "cutlass/gemm/device/default_gemm_configuration.h"
-#include "cutlass/gemm/device/gemm.h"
-#include "cutlass/tensor_ref.h"
 #include "cutlass/util/device_memory.h"
-#include "cutlass/epilogue/thread/linear_combination.h"
-#include "cutlass/epilogue/thread/scale_type.h"
-#include "cutlass/layout/matrix.h"
-#include "cutlass/util/exceptions.h"
 #include "matmul.cuh"
+#include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
-#include <exception>
 #include <iostream>
-#include <cute/arch/util.hpp>
-#include <sys/types.h>
 #include "utils.cuh"
     
 

@@ -50,7 +50,7 @@ Attention::THc Attention::CausalScaledDotAttention(int b, int h, const Matf &qq,
 }
 
 
-
+#include <fstream>
 void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC &d_outputs, int b, int h, const Matf &qq, const Matf &kk, const Matf &vv) {
 	size_t seq_len = vv.rows();
 	size_t head_channels = vv.cols();
@@ -118,16 +118,18 @@ void Attention::CausalScaledDotAttentionBackward(VecBT3C &d_inputs, const VecBTC
 
 	d_qq = d_pre_att.triangularView<Eigen::Lower>() * kk * scale;
 
-	// std::cout << d_att << std::endl;
-	// std::cout << "---------" << std::endl;
-	// std::cout << d_pre_att << std::endl;
-	// std::cout << "---------" << std::endl;
-	// std::cout << d_qq << std::endl;
-	// std::cout << "---------" << std::endl;
-	// std::cout << d_kk << std::endl;
-	// std::cout << "---------" << std::endl;
-	// std::cout << d_vv << std::endl;
-	// std::cout << "---------" << std::endl;
+
+	// std::ofstream cpu_log{"attention_log.txt",std::ios::out | std::ios::trunc};
+	// cpu_log << "----d_att-----" << std::endl;
+	// cpu_log << d_att << std::endl;
+	// cpu_log << "----d_preatt-----" << std::endl;
+	// cpu_log << d_pre_att << std::endl;
+	// cpu_log << "----d_qq-----" << std::endl;
+	// cpu_log << d_qq << std::endl;
+	// cpu_log << "----d_kk-----" << std::endl;
+	// cpu_log << d_kk << std::endl;
+	// cpu_log << "----d_vv-----" << std::endl;
+	// cpu_log << d_vv << std::endl;
 }
 
 

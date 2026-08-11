@@ -39,8 +39,6 @@ TEST(CudaLayer, forward1){
 	}
 
 
-	Eigen::Map<Vecf>(layer_cuda.l_ln1_gamma.data(),C) = layer.layernorm1.gamma;
-
 	VecBTC inputs(B);
     StdVec<float> inputs_vec(B*T*C);
 
@@ -84,8 +82,8 @@ TEST(CudaLayer, forward1){
 
 TEST(CudaLayer, forward2){
 
-	constexpr int B = 2;
-	constexpr int T = 256;
+	constexpr int B = 4;
+	constexpr int T = 64;
 	constexpr int C = 768; 
 	constexpr int Vp = 50304; 
 	constexpr int NH = 12; 
@@ -163,6 +161,83 @@ TEST(CudaLayer, forward2){
             << " ---cpu--- \n" << outputs_res[i].block<3,3>(0,0)<<std::endl ;
     }
 
+}
+
+
+TEST(CudaLayer, backward1){
+
+	constexpr int B = 2;
+	constexpr int T = 64;
+	constexpr int C = 768; 
+	constexpr int Vp = 50304; 
+	constexpr int NH = 12; 
+
+
+    auto layer = Layer(B,T,C,Vp,NH);
+	{
+		layer.layernorm1.gamma = Vecf::Random(C);
+		layer.qkv.weight 	   = Matf::Random(C , 3*C);
+		layer.att_proj.weight  = Matf::Random(C , C);
+		layer.layernorm2.gamma = Vecf::Random(C);
+		layer.fch.weight 	   = Matf::Random(C,4*C);
+		layer.fcproj.weight    = Matf::Random(4*C,C);
+	}
+
+    auto layer_cuda = gpt2cuda::Layer(B,T,C,Vp,NH);
+	{
+		Eigen::Map<Vecf>(layer_cuda.l_ln1_gamma.data(),C)   = layer.layernorm1.gamma ;
+		Eigen::Map<MatfRow>(layer_cuda.l_qkv_weight.data(),3*C,C)   = layer.qkv.weight.transpose() 	     ;
+		Eigen::Map<MatfRow>(layer_cuda.l_attproj_weight.data(),C,C)   = layer.att_proj.weight.transpose()  ;
+		Eigen::Map<Vecf>(layer_cuda.l_ln2_gamma.data(),C)   = layer.layernorm2.gamma;
+		Eigen::Map<MatfRow>(layer_cuda.l_fch_weight.data(),4*C,C) = layer.fch.weight.transpose() 	     ;
+		Eigen::Map<MatfRow>(layer_cuda.l_fcproj_weight.data(),C,4*C)   = layer.fcproj.weight.transpose()   ;
+	}
+
+
+
+	VecBTC inputs(B);
+	VecBTC d_outputs(B);
+    StdVec<float> inputs_vec(B*T*C);
+    StdVec<float> d_outputs_vec(B*T*C);
+
+    for(int i = 0 ; i < B ; ++i){
+        inputs[i] = Matf::Random(T,C); 
+        Eigen::Map<MatfRow>(inputs_vec.data() + i * T * C ,T,C) = inputs[i];
+        d_outputs[i] = Matf::Random(T,C); 
+        Eigen::Map<MatfRow>(d_outputs_vec.data() + i * T * C ,T,C) = d_outputs[i];
+    }
+
+	VecBTC d_inputs_res;
+	{
+		VecBTC outputs_res = layer.Forward(inputs);
+		auto start = std::chrono::high_resolution_clock::now();
+		d_inputs_res = layer.Backward(d_outputs, inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+    StdVec<float> outputs_vec(B*T*C);
+    StdVec<float> d_inputs_vec(B*T*C,0);
+	
+	{
+        layer_cuda.Forward(outputs_vec, inputs_vec);
+		auto start = std::chrono::high_resolution_clock::now();
+		layer_cuda.Backward(d_inputs_vec,d_outputs_vec,inputs_vec);
+		auto end= std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+    for(int i =0;i < B; ++i){
+        Eigen::Map<MatfRow> map_d_inputs_vec(d_outputs_vec.data() + i*T*C,T,C);
+        EXPECT_TRUE(map_d_inputs_vec.isApprox(d_inputs_res[i], 1.f)) 
+            << "---gpu---\n"<<map_d_inputs_vec.block<3,3>(0,0) << std::endl 
+            << " ---cpu--- \n" << d_inputs_res[i].block<3,3>(0,0)<<std::endl ;
+    }
+
     
+
 
 }

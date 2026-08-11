@@ -1,5 +1,5 @@
 #include "softmax.cuh"
-#include "global.cuh"
+#include "error.cuh"
 #include <cassert>
 #include "cutlass/util/device_memory.h"
 #include <cmath>

@@ -1,6 +1,6 @@
 #include "residual.cuh"
 #include "cutlass/util/device_memory.h"
-#include "global.cuh"
+#include "error.cuh"
 
 using DAlloc = cutlass::device_memory::allocation<float>;
 

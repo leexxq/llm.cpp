@@ -1,5 +1,5 @@
 #include "cross_entropy.cuh"
-#include "cuda/global.cuh"
+#include "error.cuh"
 #include "cutlass/util/device_memory.h"
 
 namespace gpt2cuda {

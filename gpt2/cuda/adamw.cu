@@ -1,5 +1,5 @@
 #include "adamw.cuh"
-#include "cuda/global.cuh"
+#include "error.cuh"
 #include "cutlass/util/device_memory.h"
 #include "log.h"
 #include <cstdlib>

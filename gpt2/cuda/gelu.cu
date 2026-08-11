@@ -2,7 +2,7 @@
 #include "gelu.cuh"
 #include <cmath>
 #include <cstdlib>
-#include "global.cuh"
+#include "error.cuh"
 
 
 namespace  gpt2cuda{

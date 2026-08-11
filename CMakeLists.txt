@@ -1,17 +1,29 @@
 cmake_minimum_required(VERSION 3.14)
 
-option(ENABLE_CUDA "Enable CUTLASS")
+option(ENABLE_CUDA "Enable CUTLASS" OFF)
+option(ENABLE_NVCC_TIME "Enable nvcc --time profiling" OFF)
 if(ENABLE_CUDA)
 	project(llm.cpp LANGUAGES CXX CUDA)
 
 	find_package(CUDAToolkit REQUIRED)
 
-	set(CMAKE_CUDA_ARCHITECTURES 86)
-	set(CUDA_ARCHITECTURES 86)
+	set(CMAKE_CUDA_ARCHITECTURES "86")
+	set(CUDA_ARCHITECTURES "86")
 
 else()
 	project(llm.cpp)
 endif()
+
+if(NOT ENABLE_CUDA)
+    set(
+        ENABLE_NVCC_TIME
+        OFF
+        CACHE BOOL
+        "Enable nvcc --time"
+        FORCE
+    )
+endif()
+
 
 
 
@@ -94,6 +106,13 @@ if(ENABLE_CUDA)
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
 		${CMAKE_CURRENT_SOURCE_DIR}/gpt2
 	)
+    if(ENABLE_NVCC_TIME)
+        target_compile_options(
+			gpt2cuda	
+            PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:--time=nvcc_time.log>
+        )
+    endif()
 
 	target_link_libraries(gpt2cuda PRIVATE CUDA::cudart PUBLIC fmt::fmt)
 
@@ -167,8 +186,15 @@ add_executable(traingpt2 train.cpp  utils/dataloader.cpp utils/tokenizer.cpp)
 target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
 
 if(ENABLE_CUDA)
-add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp)
-target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda)
+	add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp)
+	target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda)
+    if(ENABLE_NVCC_TIME)
+        target_compile_options(
+			traingpt2cuda
+            PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:--time>
+        )
+    endif()
 endif()
 
 
