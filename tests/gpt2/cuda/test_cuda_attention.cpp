@@ -175,7 +175,7 @@ void basic_attention_forward_test(size_t B,size_t T,size_t NH,size_t C){
     VecBTC inputs(B);
 	StdVec<float> inputs_vec(B*T*C3);
 	for(int i =0 ; i < B ; ++i){
-		inputs[i] = Matf::Random(T,C3);
+		inputs[i] = Matf::Random(T,C3) ;
         Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
 	}
 
@@ -422,9 +422,9 @@ TEST(CudaAttention,flash_attention_casual_f32_forward2){
 // min attention backward example
 TEST(CudaAttention,flash_attention_f32_backward1){
 	constexpr size_t B = 1;
-	constexpr size_t T = 256;
+	constexpr size_t T = 64;
     constexpr size_t NH = 1 ;
-    constexpr size_t Hc = 64 ;
+    constexpr size_t Hc = 32 ;
     constexpr size_t C = Hc * NH;
     constexpr size_t C3 = 3 * C;
 
@@ -562,8 +562,8 @@ TEST(CudaAttention,flash_attention_f32_backward1){
 // min attention backward example
 TEST(CudaAttention,flash_causal_attention_f32_backward1){
 	constexpr size_t B = 4;
-	constexpr size_t T = 128;
-    constexpr size_t NH = 4 ;
+	constexpr size_t T = 64;
+    constexpr size_t NH = 12 ;
     constexpr size_t Hc = 64 ;
     constexpr size_t C = Hc * NH;
     constexpr size_t C3 = 3 * C;
@@ -578,16 +578,16 @@ TEST(CudaAttention,flash_causal_attention_f32_backward1){
 
     StdVec<float> logsumexp_vec(B*NH*T);
 
-	StdVec<float> d_inputs_vec(B*T*C3);
+	StdVec<float> d_inputs_vec(B*T*C3,0);
 	StdVec<float> inputs_vec(B*T*C3);
 
 	for(int i =0 ; i < B ; ++i){
-		inputs[i] = Matf::Random(T,C3);
+		inputs[i] = Matf::Random(T,C3) ;
         Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
 	}
 
 	for(int i =0 ; i < B ; ++i){
-		d_outputs[i] = Matf::Random(T,C);
+		d_outputs[i] = Matf::Random(T,C) ;
         Eigen::Map<MatfRow> (d_outputs_vec.data() + i * T*C , T,C)  = d_outputs[i];
 	}
 

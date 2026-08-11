@@ -280,7 +280,7 @@ namespace kernel {
         ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads>>>(inputs,means,rstds, B,T,C);
         CUDA_CHECK_LAST();
 
-        CUDA_CHECK(cudaDeviceSynchronize());
+        // CUDA_CHECK(cudaDeviceSynchronize());
 
         //compute d_gamma and d_beta
         constexpr int warp_threads = 32;
@@ -350,6 +350,10 @@ namespace kernel {
         DAlloc d_inputs_d(B*T*C);
         DAlloc d_gamma_d(C);
         DAlloc d_beta_d(C);
+
+        d_inputs_d.copy_from_host(d_inputs);
+        d_gamma_d.copy_from_host(d_gamma);
+        d_beta_d.copy_from_host(d_beta);
         
 
 

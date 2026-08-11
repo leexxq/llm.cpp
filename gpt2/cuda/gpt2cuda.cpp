@@ -264,24 +264,33 @@ void GPT2::Backward(){
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
 
-    BatchCrossEntropySoftmaxBackward(dlogits_.data(), probs_.data(), targets_.data(),B,T,V,Vp,1/(B*T));
+    BatchCrossEntropySoftmaxBackward(dlogits_.data(), probs_.data(), targets_.data(),B,T,V,Vp,1.f/(B*T));
+    // std::cout << probs_[0] << std::endl;
+    // std::cout << targets_[0] << std::endl;
+
+    // std::cout << dlogits_[0] << std::endl;
 
     BatchMatmulNTBackward(dlnf_.data(),dwte_.data(),nullptr,dlogits_.data(),lnf_.data(),wte_.data(),B,T,C,Vp);
+    // std::cout << dlnf_[0] << std::endl;
 
     BatchLayerNormBackward(dresidual3_.back().data(), dlnf_gamma_.data(), dlnf_beta_.data(), dlnf_.data(), residual_.back().data(), lnf_gamma_.data(), lnf_means_.data(),lnf_rstds_.data(),B,T,C);
+    // std::cout << dresidual3_.back()[0] << std::endl;
 
     for(int l = L - 1; l > 0 ; --l){
         layers_[l].Backward(dresidual3_[l - 1],dresidual3_[l],residual_[l-1]);
+        // std::cout << dresidual3_[l-1][0] << std::endl;
     }
 
     layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_);
 
     BatchEncoderBackward(dwte_.data(),dwpe_.data(),dencoded_.data(),inputs_.data(),B,T,C,Vp,MaxT);
+    // std::cout << dencoded_[0] << std::endl;
 
 }
 
 
 void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t) {
+
 	size_t params_size = params_memory_.size();
 	for (int i = 0; i < params_size; ++i) {
 		auto [data, size] = params_memory_[i];

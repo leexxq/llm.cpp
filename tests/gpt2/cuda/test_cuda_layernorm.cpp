@@ -93,8 +93,8 @@ TEST(CudaLayerNorm, backward1){
 	VecBTC inputs(B);
 	VecBTC d_outputs(B);
 	for(int i =0 ; i < B ; ++i){
-		inputs[i] = Matf::Random(T,C);
-		d_outputs[i] = Matf::Random(T,C);
+		inputs[i] = Matf::Random(T,C) * 1000;
+		d_outputs[i] = Matf::Random(T,C) * 1000;
 	}
 
 	//convert to row-major memory
@@ -115,8 +115,8 @@ TEST(CudaLayerNorm, backward1){
 		}
 	}
 
-	layernorm.beta = Vecf::Random(C);
-	layernorm.gamma = Vecf::Random(C);
+	layernorm.beta = Vecf::Random(C) * 1000;
+	layernorm.gamma = Vecf::Random(C) * 1000;
 
 	VecBTC d_inputs_res ;
 	{
@@ -157,7 +157,7 @@ TEST(CudaLayerNorm, backward1){
 	//test d_inputs
     for(int i = 0 ; i < B ; ++i){
         Eigen::Map<MatfRow> map_d_inputs(d_inputs_vec.data() + i * T*C,T,C);
-		EXPECT_TRUE(map_d_inputs.isApprox(d_inputs_res[i], 0.001)) 
+		EXPECT_TRUE(map_d_inputs.isApprox(d_inputs_res[i], 0.001f)) 
 			<< "---gpu---\n"<<map_d_inputs.block<5,5>(0,0) << std::endl 
 			<< " ---cpu--- \n" << d_inputs_res[i].block<5,5>(0,0) <<std::endl ;
 
@@ -165,13 +165,13 @@ TEST(CudaLayerNorm, backward1){
 
 	//test d_gamma
 	Eigen::Map<Vecf> map_d_gamma(d_gamma_vec.data(),C);
-	EXPECT_TRUE(map_d_gamma.isApprox(layernorm.d_gamma, 0.001)) 
+	EXPECT_TRUE(map_d_gamma.isApprox(layernorm.d_gamma, 0.001f)) 
 		<< "---gpu---\n"<<map_d_gamma.tail(9) << std::endl 
 		<< " ---cpu--- \n" << layernorm.d_gamma.tail(9) <<std::endl ;
 
 	//test d_beta
 	Eigen::Map<Vecf> map_d_beta(d_beta_vec.data(),C);
-		EXPECT_TRUE(map_d_beta.isApprox(layernorm.d_beta, 0.001)) 
+		EXPECT_TRUE(map_d_beta.isApprox(layernorm.d_beta, 0.001f)) 
 		<< "---gpu---\n"<<map_d_beta.tail(9) << std::endl 
 		<< " ---cpu--- \n" << layernorm.d_beta.tail(9) <<std::endl ;
 }

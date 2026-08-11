@@ -64,6 +64,7 @@ namespace gpt2cuda{
 
 		d_outputs_d.copy_from_host(d_outputs);
 		outputs_d.copy_from_host(outputs);
+
 		d_inputs_d.copy_from_host(d_inputs);
 		inputs_d.copy_from_host(inputs);
 		logsumexp_d.copy_from_host(logsumexp);

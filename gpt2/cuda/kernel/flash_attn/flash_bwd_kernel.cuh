@@ -1,4 +1,5 @@
 #include <cute/tensor.hpp>
+#include "cute/numeric/numeric_types.hpp"
 #include "online_softmax.cuh"
 #include "log.cuh"
 #include "utils.cuh"
@@ -277,9 +278,9 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 					auto [x,y] = local_p_identity_coord_frag(i);
 					if constexpr(Config::Attention  == AttentionType::Causal){
 						auto [m_i,m_j] = s_identity_coord_frag(i);
-						tSrS(i) =m_j > m_i ? 0.f : exp2f(Softmax::klog2_scale * tSrS(i) - Softmax::klog_2e * sL(x));
+						tSrS(i) =min(1.f , m_j > m_i ? 0.f : exp2f(Softmax::klog2_scale * tSrS(i) - Softmax::klog_2e * sL(x)));
 					}else{
-						tSrS(i) = exp2f(Softmax::klog2_scale * tSrS(i) - Softmax::klog_2e * sL(x));
+						tSrS(i) = min(1.f, exp2f(Softmax::klog_2e  * (Softmax::kscale * tSrS(i) - sL(x))));
 					}
 				}
 			}
@@ -447,15 +448,6 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 			bwd_thread_print_tensor_verbose(gdQ);
 
 
-			// //write back to gQ
-			// Tensor gdQ = local_tile(block_dQ,make_tile(Int<Br>{},Int<Hc>{}),make_coord(tr,0));
-			// cp_Cfrag_r2s(tdQrdQ, sdQ, mmadQ);
-			// __syncthreads();
-			// vec_cp_s2g(sdQ,gdQ,C_dQ);
-			// {
-			// 	__syncthreads();
-			// 	bwd_thread_print_tensor_verbose(gdQ);
-			// }
 
 			bwd_thread_print_tensor_verbose(tdSrdS);
 			bwd_thread_print_tensor_verbose(sdS);
@@ -464,11 +456,11 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 			__syncthreads();
 			//compute dK
 			{
-				Tensor sSt = make_tensor(sdS.data(),make_layout(make_shape(Int<Bc>{},Int<Br>{}),LayoutRight{})); 
-				Tensor tdKrdSt = thr_mmadK.partition_fragment_A(sSt);
+				Tensor sdSt = make_tensor(sdS.data(),make_layout(make_shape(Int<Bc>{},Int<Br>{}),LayoutRight{})); 
+				Tensor tdKrdSt = thr_mmadK.partition_fragment_A(sdSt);
 				Tensor sQ_reshape = make_tensor(sQ.data(),make_layout(make_shape(Int<Hc>{},Int<Br>{}),LayoutLeft{}));
 				Tensor tdKrQ = thr_mmadK.partition_fragment_B(sQ_reshape);
-				ldsm_and_gemm<true,false>(tdKrdK, tdKrdSt, tdKrQ, sSt,sQ_reshape, mmadK);
+				ldsm_and_gemm<true,false>(tdKrdK, tdKrdSt, tdKrQ, sdSt,sQ_reshape, mmadK);
 			}
 			bwd_thread_print_tensor_verbose(tdKrdK);
 

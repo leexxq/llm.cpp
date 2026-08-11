@@ -2,7 +2,7 @@
 #ifdef DEBUG
 #define DEBUG_PRINTLN(...) \
 	do { \
-		fmt::print(fg(fmt::color::yellow), "[DEBUG]\t"); \
+		fmt::print("[DEBUG]\t"); \
 		fmt::println(__VA_ARGS__); \
 	} while (false)
 #endif
@@ -15,7 +15,7 @@
 
 #define ERROR_PRINTLN(...) \
 	do { \
-		fmt::print(stderr, fg(fmt::color::red), "[ERROR]\t"); \
+		fmt::print(stderr, "[ERROR]\t"); \
 		fmt::println(stderr, __VA_ARGS__); \
 	} while (false)
 

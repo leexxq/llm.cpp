@@ -231,8 +231,8 @@ TEST(CudaLayer, backward1){
 
 
     for(int i =0;i < B; ++i){
-        Eigen::Map<MatfRow> map_d_inputs_vec(d_outputs_vec.data() + i*T*C,T,C);
-        EXPECT_TRUE(map_d_inputs_vec.isApprox(d_inputs_res[i], 1.f)) 
+        Eigen::Map<MatfRow> map_d_inputs_vec(d_inputs_vec.data() + i*T*C,T,C);
+        EXPECT_TRUE(map_d_inputs_vec.isApprox(d_inputs_res[i], 0.01f)) 
             << "---gpu---\n"<<map_d_inputs_vec.block<3,3>(0,0) << std::endl 
             << " ---cpu--- \n" << d_inputs_res[i].block<3,3>(0,0)<<std::endl ;
     }

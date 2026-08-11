@@ -4,6 +4,8 @@
 #include "layer.cuh"
 #include "layernorm.cuh"
 #include "attention.cuh"
+#include <fstream>
+#include <ios>
 
 
 using namespace gpt2cuda;
@@ -111,30 +113,68 @@ void Layer::Forward(StdVecf& residual3 , const StdVecf &residual){
 }
 
 void gpt2cuda::Layer::Backward(StdVecf& dresidual , const StdVecf&d_outputs, const StdVecf &residual){
+    std::ofstream cuda_log {"cuda_layer_log.txt" ,std::ios_base::out | std::ios_base::trunc};
+    cuda_log<< "-----------cuda layer backward-----------" << std::endl;
+    // #define quick_debug_print(vec) cuda_log<< __LINE__ <<  " line  "#vec" :"  << vec[0] << "," << vec[1] << std::endl
+    #define quick_debug_print(vec) 
 
+    quick_debug_print(d_outputs);
+    quick_debug_print(residual);
     //second residual
     BatchResidualBackward(dl_residual2.data(), dl_fcproj.data(), d_outputs.data(), B_, T_, C_);
-    
+    quick_debug_print(dl_residual2);
+    quick_debug_print(dl_fcproj);
     BatchMatmulNTBackward(dl_fch_gelu.data(),dl_fcproj_weight.data(),dl_fcproj_bias.data(),dl_fcproj.data(),l_fch_gelu_.data(),l_fcproj_weight.data(),B_,T_,4*C_,C_);
 
-    BatchGeluBackward(dl_fch.data(), dl_fch_gelu.data(), l_fch_.data(),B_,T_,4*C_);
+    quick_debug_print(dl_fch_gelu);
+    quick_debug_print(dl_fch_weight);
+    quick_debug_print(dl_fch_bias);
 
+    BatchGeluBackward(dl_fch.data(), dl_fch_gelu.data(), l_fch_.data(),B_,T_,4*C_);
+    quick_debug_print(dl_fch);
+    quick_debug_print(dl_fch_gelu);
     BatchMatmulNTBackward(dl_ln2.data(),dl_fch_weight.data(),dl_fch_bias.data(),dl_fch.data(),l_ln2_.data(),l_fch_weight.data(),B_,T_,C_,4*C_);
+    quick_debug_print(dl_ln2);
+    quick_debug_print(dl_fch_weight);
 
     BatchLayerNormBackward(dl_residual2.data(), dl_ln2_gamma.data(), dl_ln2_beta.data(), dl_ln2.data(), l_residual2_.data(), l_ln2_gamma.data(),l_ln2_means_.data(), l_ln2_rstds_.data(), B_, T_, C_);
+    quick_debug_print(l_residual2_);
+    quick_debug_print(dl_residual2);
+    quick_debug_print(dl_ln2_gamma);
+    quick_debug_print(dl_ln2_beta);
+    quick_debug_print(l_ln2_gamma);
+    quick_debug_print(l_ln2_beta);
+    quick_debug_print(l_ln2_means_);
+    quick_debug_print(l_ln2_rstds_);
 
     //first residual
     BatchResidualBackward(dresidual.data(), dl_attproj.data(), dl_residual2.data(),B_,T_,C_);
+    quick_debug_print(dresidual);
+    quick_debug_print(dl_attproj);
 
     BatchMatmulNTBackward(dl_atty.data(), dl_attproj_weight.data(),dl_attproj_bias.data(),dl_attproj.data(),l_atty_.data(),l_attproj_weight.data(),B_,T_,C_,C_);
+    quick_debug_print(dl_atty);
+    quick_debug_print(dl_attproj_weight);
+    quick_debug_print(dl_attproj_bias);
 
 
     BatchCausalAttentionBackward(dl_qkv.data(),dl_atty.data(),l_atty_.data(),l_qkv_.data(),l_logsumexp_.data(),B_,T_,3*C_,NH_);
+    quick_debug_print(dl_qkv);
+    quick_debug_print(dl_atty);
+    quick_debug_print(l_atty_);
+    quick_debug_print(l_qkv_);
+    quick_debug_print(l_logsumexp_);
 
 
     BatchMatmulNTBackward(dl_ln1.data(), dl_qkv_weight.data(), dl_qkv_bias.data(),dl_qkv.data(),l_ln1_.data(),l_qkv_weight.data(),B_,T_,C_,3*C_);
+    quick_debug_print(dl_ln1);
+    quick_debug_print(dl_qkv_weight);
+    quick_debug_print(dl_qkv_bias);
 
     BatchLayerNormBackward(dresidual.data(),dl_ln1_gamma.data(),dl_ln1_beta.data(),dl_ln1.data(),residual.data(),l_ln1_gamma.data(),l_ln1_means_.data(),l_ln1_rstds_.data(),B_,T_,C_);
+    quick_debug_print(dresidual);
+    quick_debug_print(dl_ln1_gamma);
+    quick_debug_print(dl_ln1_beta);
 
 }
 

@@ -58,6 +58,7 @@ void gpt2cuda::BatchResidualBackward(float* d_inputs1 , float * d_inputs2 , floa
     d_inputs2_d.copy_from_host(d_inputs2);
 
     DAlloc d_outputs_d(B*T*C);
+    d_outputs_d.copy_from_host(d_outputs);
     ResidualBackwardCUDA(d_inputs1_d.get(), d_inputs2_d.get(), d_outputs_d.get(),B*T*C);
 
     d_inputs1_d.copy_to_host(d_inputs1);

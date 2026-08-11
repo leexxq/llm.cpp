@@ -45,11 +45,14 @@ int main(int argc, char **argv) {
 	size_t genT = 64;
 	size_t val_num_batches = 5;
 	size_t iterations = 40;
+	bool one_batch = false;
 	app.add_option("-b,--batch",B,"training batchs");
 	app.add_option("-t,--seq_length",T,"train tokens length");
 	app.add_option("--gen_token",genT,"generative text's tokens length");
 	app.add_option("--val_sets_batch",val_num_batches,"validate sets's batch for test");
 	app.add_option("-i,--iteration",iterations,"train iterations number");
+
+	app.add_flag("--one_batch",one_batch,"repeat train one batch");
 
 	CLI11_PARSE(app,argc,argv);
 
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
 
 	StdVec<int> inputs(B*T);
 	StdVec<int> targets(B*T);
+	bool next_batch =true;
 
 	for (int step = 0; step <= iterations; ++step) {
 		if (step % 10 == 0) {
@@ -117,7 +121,13 @@ int main(int argc, char **argv) {
 			INFO_PRINTLN("");
 		}
 		auto start = std::chrono::steady_clock::now();
-		train_loader.NextBatch(inputs,targets);
+		if(next_batch){
+
+			train_loader.NextBatch(inputs,targets);
+		}
+		if(one_batch){
+			next_batch = false;
+		}
 		auto start_f = std::chrono::steady_clock::now();
 		gpt2.Forward(inputs,targets);
 		auto end_f = std::chrono::steady_clock::now();
@@ -125,12 +135,15 @@ int main(int argc, char **argv) {
 		auto start_b = std::chrono::steady_clock::now();
 		gpt2.Backward();
 		auto end_b = std::chrono::steady_clock::now();
+		auto start_u = std::chrono::steady_clock::now();
 		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
+		auto end_u = std::chrono::steady_clock::now();
 		auto end = std::chrono::steady_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 		auto duration_f = std::chrono::duration_cast<std::chrono::milliseconds>(end_f - start_f);
 		auto duration_b = std::chrono::duration_cast<std::chrono::milliseconds>(end_b - start_b);
-		INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms", step, gpt2.mean_loss, duration.count(), duration_f.count(), duration_b.count());
+		auto duration_u = std::chrono::duration_cast<std::chrono::milliseconds>(end_u - start_u);
+		INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms , update duration:{}ms", step, gpt2.mean_loss, duration.count(), duration_f.count(), duration_b.count(),duration_u.count());
 	}
 
 	return 0;
