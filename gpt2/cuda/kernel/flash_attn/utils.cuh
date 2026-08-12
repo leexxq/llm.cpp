@@ -1,5 +1,6 @@
 #pragma once
 #include <cute/tensor.hpp>
+#include "cute/numeric/numeric_types.hpp"
 #include "cutlass/numeric_conversion.h"
 using namespace cute;
 #define FORCE_INLINE __forceinline__
@@ -62,14 +63,14 @@ FORCE_INLINE __device__ void vec_cp_s2g(STensor& stensor , GTensor& gtensor , Ti
 }
 
 
-template<class GTensor , class STensor , class TiledCopy>
+template<class T = cute::half_t , class GTensor , class STensor , class TiledCopy>
 FORCE_INLINE __device__ void vec_cp_g2s_to_half(GTensor& gtensor , STensor& stensor , TiledCopy tiled_copy){
 		ThrCopy thr_copy = tiled_copy.get_slice(threadIdx.x);
 		Tensor tg = thr_copy.partition_S(gtensor);
 		Tensor ts = thr_copy.partition_D(stensor);
 		Tensor tr = thr_copy.retile_D(make_fragment_like(ts));
 		copy(tiled_copy,tg,tr);
-		Tensor tr_fp16  = convert_type<cute::half_t>(tr);
+		Tensor tr_fp16  = convert_type<T>(tr);
 		copy(tiled_copy,tr_fp16,ts);
 }
 

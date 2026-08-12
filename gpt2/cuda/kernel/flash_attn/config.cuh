@@ -10,17 +10,18 @@ enum class AttentionType{
 template <
 int Br,int Bc,int Hc,
 class TL , class TD,
-class TdQ ,class TdK ,class TdV
+class TdQ ,class TdK ,class TdV,
+class TMMA = cute::half_t
 >
 								
 struct FlashBwdSharedStorage
 {
-	cute::ArrayEngine<cute::half_t, Int<Br>{} * Int<Hc>{}> Q;
-	cute::ArrayEngine<cute::half_t, Int<Bc>{} * Int<Hc>{}> K;
-	cute::ArrayEngine<cute::half_t, Int<Bc>{} * Int<Hc>{}> V;
+	cute::ArrayEngine<TMMA, Int<Br>{} * Int<Hc>{}> Q;
+	cute::ArrayEngine<TMMA, Int<Bc>{} * Int<Hc>{}> K;
+	cute::ArrayEngine<TMMA, Int<Bc>{} * Int<Hc>{}> V;
 
-	cute::ArrayEngine<cute::half_t, Int<Br>{} * Int<Bc>{}> P;
-	cute::ArrayEngine<cute::half_t, Int<Br>{} * Int<Hc>{}> dO;
+	cute::ArrayEngine<TMMA, Int<Br>{} * Int<Bc>{}> P;
+	cute::ArrayEngine<TMMA, Int<Br>{} * Int<Hc>{}> dO;
 
 	cute::ArrayEngine<TL, Int<Br>{}> L;
 	cute::ArrayEngine<TD, Int<Br>{}> D;
@@ -41,10 +42,23 @@ struct FlashBwdConfigFp32{
     static constexpr int kBc = 64;
 	static constexpr int kHc = HeadDim;
 
-	using SharedStorage = FlashBwdSharedStorage<kBr,kBc,kHc,float,float,float,float,float>;
+	
+	// using SharedStorage = FlashBwdSharedStorage<kBr,kBc,kHc,float,float,float,float,float,cute::half_t>;
+	using SharedStorage = FlashBwdSharedStorage<kBr,kBc,kHc,float,float,float,float,float,cute::bfloat16_t>;
+
 	static constexpr int smem_size = int(sizeof(SharedStorage)); 
 
 	static constexpr AttentionType Attention = Att;
+
+	// using MMAOP = SM80_16x8x16_F32F16F16F32_TN;
+	using MMAOP = SM80_16x8x16_F32BF16BF16F32_TN;
+	using MMALayout = Layout<Shape<_4, _1, _1>>;
+	using MMATile_S = Tile<Int<kBr>, Int<kBc>, _16>;
+	using MMATile_dQ = Tile<Int<kBr>, Int<kHc>, _16>;
+	using MMATile_dK = Tile<Int<kBc>, Int<kHc>, _16>;
+	using MMA_S = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_S{}));
+	using MMA_dQ = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_dQ{}));
+	using MMA_dK = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_dK{}));
 
 
 	using VecCpyAtom = Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>,float>;

@@ -1,5 +1,5 @@
 #include <cute/tensor.hpp>
-#include "cute/numeric/numeric_types.hpp"
+#include "cutlass/bfloat16.h"
 #include "online_softmax.cuh"
 #include "log.cuh"
 #include "utils.cuh"
@@ -104,23 +104,17 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 										typename Config::TdV  * dV, typename Layouts::LayoutdV L_dV	
 										){
 
+											
+
+    //trait config arguments
 	constexpr int Br = Config::kBr;
 	constexpr int Bc = Config::kBc;
 	constexpr int Hc = Config::kHc;
 
-	using MMAOP = SM80_16x8x16_F32F16F16F32_TN;
-	using MMALayout = Layout<Shape<_4, _1, _1>>;
-	using MMATile_S = Tile<Int<Br>, Int<Bc>, _16>;
-	using MMATile_dQ = Tile<Int<Br>, Int<Hc>, _16>;
-	using MMATile_dK = Tile<Int<Bc>, Int<Hc>, _16>;
-	using MMA_S = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_S{}));
-	using MMA_dQ = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_dQ{}));
-	using MMA_dK = decltype(make_tiled_mma(MMAOP{}, MMALayout{}, MMATile_dK{}));
-
     // Mma 
-	MMA_S mmaS,mmadP;
-	MMA_dQ mmadQ;
-	MMA_dK mmadK,mmadV;
+	typename Config::MMA_S mmaS,mmadP;
+	typename Config::MMA_dQ mmadQ;
+	typename Config::MMA_dK mmadK,mmadV;
 
  	typename Config::CopyQ C_Q;
 	typename Config::CopyK C_K; 
@@ -195,8 +189,8 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 
 		//copy V,K to smem and convert to half
 
-		vec_cp_g2s_to_half(gK,sK,C_K);
-		vec_cp_g2s_to_half(gV,sV,C_V);
+		vec_cp_g2s_to_half<cute::bfloat16_t>(gK,sK,C_K);
+		vec_cp_g2s_to_half<cute::bfloat16_t>(gV,sV,C_V);
 
 
 
@@ -232,7 +226,7 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 
 			Tensor sQ = make_tensor(make_smem_ptr(smemQ),sQ_layout);
 			//Qcopy
-			vec_cp_g2s_to_half(gQ, sQ, C_Q);
+			vec_cp_g2s_to_half<cute::bfloat16_t>(gQ, sQ, C_Q);
 
 			//ensure all smem cp finish
 			__syncthreads();
@@ -291,7 +285,7 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 
 			Tensor sdO = make_tensor(make_smem_ptr(smemdO),make_layout(make_shape(Int<Br>{},Int<Hc>{}),LayoutRight()));
 			//dOcopy
-			vec_cp_g2s_to_half(gdO, sdO, C_dO);
+			vec_cp_g2s_to_half<cute::bfloat16_t>(gdO, sdO, C_dO);
 			// wait dO
 			__syncthreads();
 			
@@ -329,7 +323,7 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 			bwd_thread_print_tensor_verbose(tdPrdP);
 
 			//first convert to fp16
-			Tensor tPrP = convert_type<cute::half_t>(tSrS);
+			Tensor tPrP = convert_type<cute::bfloat16_t>(tSrS);
 			bwd_thread_print_tensor_verbose(tPrP);
 			
 			
@@ -363,7 +357,7 @@ __global__ void AttentionBackwardKernel(typename Config::TQ const * Q, typename 
 
 
 			//convert to fp16 for dS
-			Tensor tdSrdS = convert_type<cute::half_t>(tdPrdP);
+			Tensor tdSrdS = convert_type<cute::bfloat16_t>(tdPrdP);
 			
 
 			// will reuse smem ,must wait all threads gemm op finish

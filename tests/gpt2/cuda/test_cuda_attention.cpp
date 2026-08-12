@@ -418,7 +418,7 @@ TEST(CudaAttention,flash_attention_casual_f32_forward2){
 
 
 
-// cd ~/llm.cpp/build && ninja gpt2cudatest && ./tests/gpt2cudatest --gtest_filter='*flash_attention_f32_backward1' > log.txt "/root/llm.cpp/tests/gpt2/cuda/test_cuda_attention.cpp"
+// cd ~/llm.cpp/build && ninja gpt2cudatest && ./tests/gpt2cudatest --gtest_filter='*flash_attention_f32_backward1' > log.txt
 // min attention backward example
 TEST(CudaAttention,flash_attention_f32_backward1){
 	constexpr size_t B = 1;
@@ -442,7 +442,7 @@ TEST(CudaAttention,flash_attention_f32_backward1){
 	StdVec<float> inputs_vec(B*T*C3);
 
 	for(int i =0 ; i < B ; ++i){
-		inputs[i] = Matf::Random(T,C3);
+		inputs[i] = Matf::Random(T,C3) * 10;
         Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
 	}
 
