@@ -1,4 +1,3 @@
-#include "cuda/global.cuh"
 #include "cuda/softmax.cuh"
 #include "layernorm.cuh"
 #include "log.h"
@@ -6,7 +5,8 @@
 #include "cross_entropy.cuh"
 #include "encoder.cuh"
 #include "gpt2cuda.h"
-#include "adamw.cuh"
+#include "adamw.h"
+// #include "adamw.cuh"
 #include <cassert>
 #include <iostream>
 #include <numeric>
@@ -115,6 +115,8 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
         f.read(reinterpret_cast<byte>(lnf_beta_.data()),sizeof(float) *C);
 
         std::cout <<"load success lnf_beta"<<std::endl;
+        std::cout << "load params MB: " << (params_bytes_ / (1024.0 * 1024.0)) << std::endl; 
+        std::cout << "load optim params MB: " << (optimizer_bytes_ / (1024.0 * 1024.0)) << std::endl; 
     } catch (...) {
         f.close();
     }
@@ -123,43 +125,75 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
 void GPT2::Init(size_t B,size_t T){
     config_.Print();
 
+    params_bytes_ = 0;
+    inputs_ = makePinVec<int>({B,T});
+    targets_ = makePinVec<int>({B,T});
+    params_bytes_ += inputs_.size() * sizeof(int);
+    params_bytes_ += targets_.size() * sizeof(int);
+
     {
         //encoder init
 
-        encoded_ = makeVec<float>({B,T,config_.channels});
+        encoded_ = makePinVecf({B,T,config_.channels});
+        params_bytes_ += encoded_.size() * sizeof(float);
 
         //layers init
 		for (int l = 0; l < config_.num_layers; ++l) {
 			layers_.emplace_back(B, T, config_.channels, config_.vocab_size, config_.num_heads);
+            params_bytes_ += layers_.back().GetParamsMemorySize();
 		}
 
-        wte_ = makeVec<float>({config_.padded_vocab_size,config_.channels});//(Vp,C)
-        wpe_ = makeVec<float>({config_.max_seq_len,config_.channels});//(maxT,C)
 
-        dwte_ = makeVec<float>({config_.padded_vocab_size,config_.channels});//(Vp,C)
-        dwpe_ = makeVec<float>({config_.max_seq_len,config_.channels});//(maxT,C)
+        wte_ = makePinVecf({config_.padded_vocab_size,config_.channels});//(Vp,C)
+        wpe_ = makePinVecf({config_.max_seq_len,config_.channels});//(maxT,C)
+        dwte_ = makePinVecf({config_.padded_vocab_size,config_.channels});//(Vp,C)
+        dwpe_ = makePinVecf({config_.max_seq_len,config_.channels});//(maxT,C)
 
-        lnf_ = makeVec<float>({B,T,config_.channels});
-        lnf_means_= makeVec<float>({B,T});//(B,T)
-        lnf_rstds_= makeVec<float>({B,T});//(B,T)
-        lnf_gamma_ = makeVec<float>({config_.channels}) ;//(C)
-        lnf_beta_  = makeVec<float>({config_.channels}) ;//(C)
+        params_bytes_ += wte_.size() * sizeof(float);
+        params_bytes_ += wpe_.size() * sizeof(float);
+        params_bytes_ += dwte_.size() * sizeof(float);
+        params_bytes_ += dwpe_.size() * sizeof(float);
 
-        residual_ = StdVec<StdVecf>(config_.num_layers,makeVec<float>({B,T,config_.channels}));
+        lnf_ = makePinVecf({B,T,config_.channels});
+        lnf_means_= makePinVecf({B,T});//(B,T)
+        lnf_rstds_= makePinVecf({B,T});//(B,T)
+        lnf_gamma_ = makePinVecf({config_.channels}) ;//(C)
+        lnf_beta_  = makePinVecf({config_.channels}) ;//(C)
 
-        logits_ = makeVec<float>({B,T,config_.padded_vocab_size});
-        probs_ = makeVec<float>({B,T,config_.padded_vocab_size});
-        losses = makeVec<float>({B,T});
+        params_bytes_ += lnf_.size() * sizeof(float);
+        params_bytes_ += lnf_means_.size() * sizeof(float);
+        params_bytes_ += lnf_rstds_.size() * sizeof(float);
+        params_bytes_ += lnf_gamma_.size() * sizeof(float);
+        params_bytes_ += lnf_beta_.size() * sizeof(float);
+
+        residual_ = StdVec<PinVecf>(config_.num_layers,makePinVecf({B,T,config_.channels}));
+
+        params_bytes_ += residual_.size() * sizeof(PinVecf);
 
 
+        logits_ = makePinVecf({B,T,config_.padded_vocab_size});
+        probs_ = makePinVecf({B,T,config_.padded_vocab_size});
+        losses = makePinVecf({B,T});
+        params_bytes_ += logits_.size() * sizeof(float);
+        params_bytes_ += probs_.size() * sizeof(float);
+        params_bytes_ += losses.size() * sizeof(float);
 
-        dlnf_gamma_ = makeVec<float>({config_.channels});//(C)
-        dlnf_beta_  = makeVec<float>({config_.channels});//(C)
-        dlogits_ = makeZero<float>({B,T,config_.padded_vocab_size});
-        dlnf_ = makeZero<float>({B,T,config_.channels});
-        dresidual3_ = StdVec<StdVecf>(config_.num_layers,makeZero<float>({B,T,config_.channels}));
-        dencoded_ = makeZero<float>({B,T,config_.channels});
+
+        dlnf_gamma_ = makePinVecf({config_.channels});//(C)
+        dlnf_beta_  = makePinVecf({config_.channels});//(C)
+        dlogits_ = makePinVecfZero({B,T,config_.padded_vocab_size});
+        dlnf_ = makePinVecfZero({B,T,config_.channels});
+        dresidual3_ = StdVec<PinVecf>(config_.num_layers,makePinVecfZero({B,T,config_.channels}));
+        dencoded_ = makePinVecfZero({B,T,config_.channels});
+
+        params_bytes_ += dlnf_gamma_.size() * sizeof(float);
+        params_bytes_ += dlnf_beta_.size() * sizeof(float);
+        params_bytes_ += dlogits_.size() * sizeof(float);
+        params_bytes_ += dlnf_.size() * sizeof(float);
+        params_bytes_ += dencoded_.size() * sizeof(float);
+
     }
+
 
 
 	//params and grads data
@@ -209,13 +243,17 @@ void GPT2::Init(size_t B,size_t T){
 	}
 	//AdamW's m and v
 	{
+        optimizer_bytes_ = 0;
 		size_t params_size = params_memory_.size();
-		m_ = StdVec<StdVecf>(params_size);
-		v_ = StdVec<StdVecf>(params_size);
+		m_ = StdVec<PinVecf>(params_size);
+		v_ = StdVec<PinVecf>(params_size);
 		for (int i = 0; i < params_size; ++i) {
-			m_[i] = makeZero<float>({params_memory_[i].second});
-			v_[i] = makeZero<float>({params_memory_[i].second});
+			m_[i] = makePinVecfZero({params_memory_[i].second});
+			v_[i] = makePinVecfZero({params_memory_[i].second});
+            optimizer_bytes_ += m_[i].size() * sizeof(float);
+            optimizer_bytes_ += v_[i].size() * sizeof(float);
 		}
+        
 	}
 
 }
@@ -226,15 +264,15 @@ void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets){
         assert(B_ * T_ == targets.size());
     }
 
-    this->inputs_ = inputs;
-    this->targets_ = targets;
+    this->inputs_.assign(inputs.begin(),inputs.end()) ;
+    this->targets_.assign(targets.begin(),targets.end());
 
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
 
 
-    BatchEncoderForward(encoded_.data(), inputs.data(),wte_.data(),wpe_.data(),B,T,C,Vp,MaxT);
+    BatchEncoderForward(encoded_.data(), inputs_.data(),wte_.data(),wpe_.data(),B,T,C,Vp,MaxT);
 
     layers_.front().Forward(residual_.front(),encoded_);
 
@@ -263,26 +301,37 @@ void GPT2::Backward(){
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
+    // std::cout << " ---backward--- " << std::endl;
 
+    // std::cout << dlogits_.front() << std::endl;
     BatchCrossEntropySoftmaxBackward(dlogits_.data(), probs_.data(), targets_.data(),B,T,V,Vp,1.f/(B*T));
+    
     // std::cout << probs_[0] << std::endl;
     // std::cout << targets_[0] << std::endl;
 
     // std::cout << dlogits_[0] << std::endl;
 
+    // std::cout << dlnf_.front()  << std::endl;
+    // std::cout << dwte_.front()  << std::endl;
     BatchMatmulNTBackward(dlnf_.data(),dwte_.data(),nullptr,dlogits_.data(),lnf_.data(),wte_.data(),B,T,C,Vp);
     // std::cout << dlnf_[0] << std::endl;
 
+    // std::cout << dresidual3_.back().front()  << std::endl;
+    // std::cout << dwte_.front()  << std::endl;
     BatchLayerNormBackward(dresidual3_.back().data(), dlnf_gamma_.data(), dlnf_beta_.data(), dlnf_.data(), residual_.back().data(), lnf_gamma_.data(), lnf_means_.data(),lnf_rstds_.data(),B,T,C);
     // std::cout << dresidual3_.back()[0] << std::endl;
 
     for(int l = L - 1; l > 0 ; --l){
+        // std::cout << dresidual3_[l - 1].front()  << std::endl;
         layers_[l].Backward(dresidual3_[l - 1],dresidual3_[l],residual_[l-1]);
         // std::cout << dresidual3_[l-1][0] << std::endl;
     }
 
+    // std::cout << dencoded_.front() << std::endl;
     layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_);
 
+    // std::cout << dwte_.front() << std::endl;
+    // std::cout << dwpe_.front() << std::endl;
     BatchEncoderBackward(dwte_.data(),dwpe_.data(),dencoded_.data(),inputs_.data(),B,T,C,Vp,MaxT);
     // std::cout << dencoded_[0] << std::endl;
 
@@ -291,24 +340,39 @@ void GPT2::Backward(){
 
 void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t) {
 
+	// size_t params_size = params_memory_.size();
+	// for (int i = 0; i < params_size; ++i) {
+	// 	auto [data, size] = params_memory_[i];
+	// 	auto [grads_data, grads_size] = grads_memory_[i];
+	// 	assert(size == grads_size && size == m_[i].size());
+    //     AdamW(data,grads_data,m_[i].data(),v_[i].data(),m_[i].size(),lr,beta1,beta1,eps,weight,t);
+	// }
+	AdamWParams adamw_params{
+		lr,
+		beta1,
+		beta2,
+		eps,
+		weight,
+		t
+	};
+
 	size_t params_size = params_memory_.size();
 	for (int i = 0; i < params_size; ++i) {
 		auto [data, size] = params_memory_[i];
 		auto [grads_data, grads_size] = grads_memory_[i];
 		assert(size == grads_size && size == m_[i].size());
-        AdamW(data,grads_data,m_[i].data(),v_[i].data(),m_[i].size(),lr,beta1,beta1,eps,weight,t);
+		AdamW(data, grads_data, m_[i].data(), v_[i].data(), m_[i].size(), adamw_params);
 	}
+
 
     std::cout << "Update Successfully!"  << std::endl;
 }
 
-void SetZero(StdVecf& v){
-    for(auto& vv : v){
-        vv  = 0;
-    }
+void SetZero(PinVecf& v){
+    v.assign(v.size(),0);
 }
 
-void SetZero(StdVec<StdVecf>& v){
+void SetZero(StdVec<PinVecf>& v){
     for(auto & vv : v){
         SetZero(vv);
     }

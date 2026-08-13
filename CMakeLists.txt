@@ -154,6 +154,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         $<$<CONFIG:Release>:-march=native>
         $<$<CONFIG:Release>:-ffast-math>
 	)
+	if(ENABLE_CUDA)
+		target_compile_options(gpt2cuda PUBLIC 
+			$<$<CONFIG:Release>:-O3>
+			$<$<CONFIG:Release>:-march=native>
+			$<$<CONFIG:Release>:-ffast-math>
+		)
+	endif()
+
 
 	check_cxx_compiler_flag("-Wnan-infinity-disabled" COMPILER_SUPPORTS_NO_NAN_INF)
 	if(COMPILER_SUPPORTS_NO_NAN_INF)
@@ -186,8 +194,11 @@ add_executable(traingpt2 train.cpp  utils/dataloader.cpp utils/tokenizer.cpp)
 target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
 
 if(ENABLE_CUDA)
-	add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp)
-	target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda)
+	add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp gpt2/adamw.cpp)
+	target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda PRIVATE CUDA::cudart )
+	if(OpenMP_CXX_FOUND)
+		target_link_libraries(traingpt2cuda PUBLIC $<$<CONFIG:Release>:OpenMP::OpenMP_CXX>)
+	endif()
     if(ENABLE_NVCC_TIME)
         target_compile_options(
 			traingpt2cuda
