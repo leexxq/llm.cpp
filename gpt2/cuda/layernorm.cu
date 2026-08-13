@@ -97,7 +97,7 @@ namespace kernel {
     };
 
     template<int threads=256>
-    void LayerNormForwardCUDA(float * outputs_d,float * means , float* rstds , float const * inputs_d,float const * gamma,float const * beta,int const length,int const stride){
+    void LayerNormForwardCUDA(float * outputs_d,float * means , float* rstds , float const * inputs_d,float const * gamma,float const * beta,int const length,int const stride,cudaStream_t stream = 0){
 
         //compute one row by warps
         assert(length % stride == 0);
@@ -107,7 +107,7 @@ namespace kernel {
         const int blocks  = ((length/stride) + warps -1 )/ (warps);
 
         // std::cout <<"blocks:" << blocks << std::endl;
-        LayerNormForwardKernel<<<blocks,threads>>>(outputs_d,means,rstds,inputs_d,gamma,beta,length,stride); 
+        LayerNormForwardKernel<<<blocks,threads,0,stream>>>(outputs_d,means,rstds,inputs_d,gamma,beta,length,stride); 
         CUDA_CHECK_LAST();
     }
 
@@ -273,11 +273,11 @@ namespace kernel {
 
     //require device memory 
     template <int threads=256,int K =1> 
-    void LayerNormBackwardCUDA(float * d_inputs , float * d_gamma, float * d_beta, float const * d_outputs, float * inputs, float const * gamma,float const * means, float const * rstds, int B, int T, int C){
+    void LayerNormBackwardCUDA(float * d_inputs , float * d_gamma, float * d_beta, float const * d_outputs, float * inputs, float const * gamma,float const * means, float const * rstds, int B, int T, int C,cudaStream_t stream = 0){
 
         assert(C!=0);
         //convert inputs to  \hat{x}_{ij}
-        ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads>>>(inputs,means,rstds, B,T,C);
+        ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(inputs,means,rstds, B,T,C);
         CUDA_CHECK_LAST();
 
         // CUDA_CHECK(cudaDeviceSynchronize());
@@ -289,14 +289,14 @@ namespace kernel {
         // constexpr int threads = warp_threads * warp_count;
         int blocks = (C+ warp_count - 1)/ warp_count;
 
-        GammaAndBetaDerivateKernel<<<blocks,threads>>>(d_gamma, d_beta, d_outputs, inputs,B,T, C);
+        GammaAndBetaDerivateKernel<<<blocks,threads,0,stream>>>(d_gamma, d_beta, d_outputs, inputs,B,T, C);
         CUDA_CHECK_LAST();
 
         assert((B*T)% K == 0);
 
         //compute d_inputs
         //compute one row by blocks
-        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C>>>(d_inputs, d_outputs , inputs, gamma,rstds, B,T,C);
+        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C,stream>>>(d_inputs, d_outputs , inputs, gamma,rstds, B,T,C);
         CUDA_CHECK_LAST();
 
     }
@@ -364,6 +364,13 @@ namespace kernel {
         d_gamma_d.copy_to_host(d_gamma);
         d_beta_d.copy_to_host(d_beta);
 
+    }
+
+    void BatchLayerNormForward(DevVecf& outputs, DevVecf& means, DevVecf& rstds, const DevVecf& inputs, const DevVecf& gamma, const DevVecf& beta, int B, int T, int C, cudaStream_t stream){
+        kernel::LayerNormForwardCUDA<>(outputs.data(),means.data(),rstds.data(),inputs.data(),gamma.data(),beta.data(),B*T*C,C,stream);
+    }
+    void BatchLayerNormBackward(DevVecf& d_inputs, DevVecf& d_gamma, DevVecf& d_beta, const DevVecf& d_outputs, const DevVecf& inputs, const DevVecf& gamma, const DevVecf& means, const DevVecf& rstds, int B, int T, int C, cudaStream_t stream ){
+        kernel::LayerNormBackwardCUDA<>(d_inputs.data(), d_gamma.data(), d_beta.data(),  d_outputs.data(),  inputs.data(),  gamma.data(),   means.data(),  rstds.data(),  B,  T,  C, stream);
     }
 
 }

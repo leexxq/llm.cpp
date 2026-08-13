@@ -50,17 +50,17 @@ namespace gpt2cuda {
     template<class T>
     using DevVec = DevVector<T>;
 
-    auto makeVecfDevice(size_t n){
+    inline auto makeVecfDevice(size_t n){
         return DevVecf(n);
     }
 
 
-    auto makeVeciDevice(size_t n){
+    inline auto makeVeciDevice(size_t n){
         return DevVeci(n);
     }
 
     template<class T>
-    auto makeVecDevice(size_t n ){
+    inline auto makeVecDevice(size_t n ){
         return DevVector<T>(n);
     }
 }

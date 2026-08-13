@@ -29,9 +29,9 @@ namespace kernel{
 
     //params' memory on device 
     template<int threads = 256>
-    void GeluBackwardCuda(float * d_inputs,float const * d_outputs,float const* inputs,int length){
+    void GeluBackwardCuda(float * d_inputs,float const * d_outputs,float const* inputs,int length,cudaStream_t stream = 0){
         const int blocks = (length + threads - 1)/ threads;
-        GeluBackwardKernel<<<blocks,threads>>>(d_inputs, d_outputs, inputs,length);
+        GeluBackwardKernel<<<blocks,threads,0,stream>>>(d_inputs, d_outputs, inputs,length);
         CUDA_CHECK_LAST();
     }
 
@@ -49,9 +49,9 @@ namespace kernel{
 
     //params' memory on device 
     template<int threads = 256>
-    void GeluForwardCuda(float * outputs,float const * inputs, int length){
+    void GeluForwardCuda(float * outputs,float const * inputs, int length, cudaStream_t stream = 0){
         const int blocks = (length + threads - 1)/ threads;
-        GeluForwardKernel<<<blocks,threads>>>(outputs, inputs,length);
+        GeluForwardKernel<<<blocks,threads,0,stream>>>(outputs, inputs,length);
         CUDA_CHECK_LAST();
     }
 } 
@@ -80,6 +80,14 @@ namespace kernel{
         kernel::GeluForwardCuda(outputs_d.get(), inputs_d.get(), B*T*C);
 
         outputs_d.copy_to_host(outputs);
+    }
+
+    void BatchGeluForward(DevVecf& outputs,const DevVecf& inputs, int B,int T, int C,cudaStream_t stream){
+        kernel::GeluForwardCuda(outputs.data(), inputs.data(), B*T*C, stream);
+    }
+    void BatchGeluBackward(DevVecf& d_inputs,const DevVecf& d_outputs,const DevVecf& inputs,int B,int T,int C,cudaStream_t stream){
+        kernel::GeluBackwardCuda(d_inputs.data(),d_outputs.data(),inputs.data(),B*T*C, stream);
+
     }
 }
 

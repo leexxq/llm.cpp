@@ -5,7 +5,7 @@ namespace gpt2cuda {
 namespace kernel {
 
     template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
-    void AttentionForwardCUDA(float *outputs, float * logsumexp ,float const *inputs, int B, int T, int C3, int NH) {
+    void AttentionForwardCUDA(float *outputs, float * logsumexp ,float const *inputs, int B, int T, int C3, int NH,cudaStream_t stream) {
 
         assert(C3 % 3 == 0);
         int C = C3 / 3;
@@ -67,7 +67,7 @@ namespace kernel {
 
         
         dim3 dimGrid(B,NH);
-        kernel_fptr<<<dimGrid, 128>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, logsumexp,L_logsumexp,mmaS, mmaO);
+        kernel_fptr<<<dimGrid, 128,0,stream>>>(inputs, L_Q, copyQ, inputs + C, L_K, copyK, inputs + 2 * C, L_V, copyV, outputs, L_O, copyO, logsumexp,L_logsumexp,mmaS, mmaO);
     }
 
 

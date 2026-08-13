@@ -106,6 +106,7 @@ if(ENABLE_CUDA)
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
 		${CMAKE_CURRENT_SOURCE_DIR}/gpt2
 	)
+
     if(ENABLE_NVCC_TIME)
         target_compile_options(
 			gpt2cuda	
@@ -196,6 +197,11 @@ target_link_libraries(traingpt2 PRIVATE CLI11::CLI11 PRIVATE gpt2cpp)
 if(ENABLE_CUDA)
 	add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp gpt2/adamw.cpp)
 	target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda PRIVATE CUDA::cudart )
+
+	target_include_directories(traingpt2cuda PRIVATE 
+		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
+	)
+
 	if(OpenMP_CXX_FOUND)
 		target_link_libraries(traingpt2cuda PUBLIC $<$<CONFIG:Release>:OpenMP::OpenMP_CXX>)
 	endif()

@@ -113,7 +113,7 @@ namespace kernel{
 
 
     template <int threads= 256>
-    void SoftmaxForwardCUDA(float * outputs, float * const inputs ,int ld , int length,int stride){
+    void SoftmaxForwardCUDA(float * outputs, float * const inputs ,int ld , int length,int stride, cudaStream_t stream = 0){
 
         //compute one row by warps
         assert(length % stride == 0);
@@ -123,7 +123,7 @@ namespace kernel{
 
         // std::cout <<"blocks:" << blocks << std::endl;
         
-        SoftmaxforwardKernel<threads><<<blocks,threads>>>(outputs,inputs,ld,length,stride); 
+        SoftmaxforwardKernel<threads><<<blocks,threads,0,stream>>>(outputs,inputs,ld,length,stride); 
         CUDA_CHECK_LAST();
     }
 
@@ -144,6 +144,17 @@ namespace kernel{
     }
 
     void BatchSoftmaxBackward(float* d_inputs, float * const d_outputs,float const * inputs , size_t B ,size_t T ,size_t V ,size_t Vp){
+
+    }
+
+
+
+
+    void BatchSoftmaxForward(DevVecf& outputs, const DevVecf& inputs, size_t B, size_t T, size_t V, size_t Vp, cudaStream_t stream){
+        kernel::SoftmaxForwardCUDA(outputs.data(), inputs.data(),Vp,B*T*V ,V,stream);
+    }
+    void BatchSoftmaxBackward(DevVecf& d_inputs, const DevVecf& d_outputs, const DevVecf& inputs, size_t B, size_t T, size_t V, size_t Vp, cudaStream_t stream){
+
 
     }
 }

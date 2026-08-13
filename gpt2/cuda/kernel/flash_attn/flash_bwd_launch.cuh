@@ -20,7 +20,7 @@ namespace kernel {
 		using LayoutdV = LQKV;
 	};
     template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
-    void AttentionBackwardCUDA(float *d_inputs, float const *d_outputs, float const* outputs , float const *inputs,float const* logsumexp, int B, int T, int C3, int NH) {
+    void AttentionBackwardCUDA(float *d_inputs, float const *d_outputs, float const* outputs , float const *inputs,float const* logsumexp, int B, int T, int C3, int NH,cudaStream_t stream) {
 
         assert(C3 % 3 == 0);
         int C = C3 / 3;
@@ -87,7 +87,7 @@ namespace kernel {
         // std::cout << "using smem size : " << Config::smem_size/ 1024 << "kb" << std::endl;
         CUDA_CHECK(cudaFuncSetAttribute(kernel_fptr, cudaFuncAttributeMaxDynamicSharedMemorySize, Config::smem_size));
         CUDA_CHECK(cudaFuncSetAttribute(kernel_fptr,cudaFuncAttributePreferredSharedMemoryCarveout, 100));
-        kernel_fptr<<<dimGrid,Config::kthreads,Config::smem_size>>>(
+        kernel_fptr<<<dimGrid,Config::kthreads,Config::smem_size,stream>>>(
                                     Q,L_Q,
                                     K,L_K,
                                     V,L_V,

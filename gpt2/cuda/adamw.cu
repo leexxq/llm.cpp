@@ -31,11 +31,9 @@ float* data ,float* grad_data, float *m ,float * v ,  std::size_t size,
 
 template<int threads=256>
 void AdamWCUDA(float* data ,float* grad_data, float *m ,float * v ,  std::size_t size, 
-    float lr,float beta1,float beta2,float eps,float weight_decay,int t){
-
-        AdamWKernel<<<(size + threads - 1) / threads,threads>>>(data, grad_data, m, v, size, lr, beta1, beta2, eps, weight_decay, t);
+    float lr,float beta1,float beta2,float eps,float weight_decay,int t,cudaStream_t stream){
+        AdamWKernel<<<(size + threads - 1) / threads,threads,0,stream>>>(data, grad_data, m, v, size, lr, beta1, beta2, eps, weight_decay, t);
         CUDA_CHECK_LAST();
-
 }
 
 }
@@ -53,28 +51,16 @@ void AdamW(float* data, float const* grad_data, float* m, float* v, std::size_t 
     m_d.copy_from_host(m);
     v_d.copy_from_host(v);
 
-    kernel::AdamWCUDA(data_d.get(), grad_data_d.get(), m_d.get(), v_d.get(), size, lr, beta1, beta2, eps, weight_decay, t);
+    kernel::AdamWCUDA(data_d.get(), grad_data_d.get(), m_d.get(), v_d.get(), size, lr, beta1, beta2, eps, weight_decay, t,0);
 
     data_d.copy_to_host(data);
     m_d.copy_to_host(m);
     v_d.copy_to_host(v);
 }
-void AdamWSteam(float* data, float const* grad_data, float* m, float* v, std::size_t size, 
-        float lr,float beta1,float beta2,float eps,float weight_decay,int t){
-    DAlloc data_d(size);
-    DAlloc grad_data_d(size);
-    DAlloc m_d(size);
-    DAlloc v_d(size);
-    data_d.copy_from_host(data);
-    grad_data_d.copy_from_host(grad_data);
-    m_d.copy_from_host(m);
-    v_d.copy_from_host(v);
 
-    kernel::AdamWCUDA(data_d.get(), grad_data_d.get(), m_d.get(), v_d.get(), size, lr, beta1, beta2, eps, weight_decay, t);
-
-    data_d.copy_to_host(data);
-    m_d.copy_to_host(m);
-    v_d.copy_to_host(v);
+void AdamW(DevVecf& data , const DevVecf& grad_data , DevVecf& m ,DevVecf& v,
+        std::size_t size, const AdamWConfig& config,cudaStream_t stream){
+    kernel::AdamWCUDA(data.data(), grad_data.data(), m.data(), v.data(), size, config.lr,config.beta1,config.beta2,config.eps,config.weight_decay,config.t,stream);
 }
 
 }

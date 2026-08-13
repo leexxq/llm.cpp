@@ -25,16 +25,16 @@ namespace gpt2cuda {
         }
 
         template <int threads=256>
-        void EncoderForwardCUDA(float * outputs,int const * inputs ,float  const * wte,float const*  wpe,int B,int T,int C){
-            EncoderForwardKernel<<<(B*T*C + threads - 1)/ threads,threads>>>(outputs, inputs, wte, wpe, B, T, C);
+        void EncoderForwardCUDA(float * outputs,int const * inputs ,float  const * wte,float const*  wpe,int B,int T,int C,cudaStream_t stream = 0){
+            EncoderForwardKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(outputs, inputs, wte, wpe, B, T, C);
             CUDA_CHECK_LAST();
         }
 
 
         template <int threads=256>
-        void EncoderBackwardCUDA(float* d_wte,float * d_wpe, float const*  d_outputs,int const * inputs,int B,int T,int C){
+        void EncoderBackwardCUDA(float* d_wte,float * d_wpe, float const*  d_outputs,int const * inputs,int B,int T,int C,cudaStream_t stream = 0){
 
-            EncoderBackwardKernel<<<(B*T*C + threads - 1)/ threads,threads>>>(d_wte,d_wpe,d_outputs,inputs ,B,T,C);
+            EncoderBackwardKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(d_wte,d_wpe,d_outputs,inputs ,B,T,C);
             CUDA_CHECK_LAST();
         }
         
@@ -85,5 +85,16 @@ namespace gpt2cuda {
             std::cerr<< e << std::endl;
         }
 
+    }
+
+
+
+    void BatchEncoderForward(DevVecf& outputs,const DevVeci& inputs ,const DevVecf& wte,const DevVecf& wpe,int B,int T,int C,int V ,int MaxT,cudaStream_t stream){
+
+        kernel::EncoderForwardCUDA(outputs.data(), inputs.data(),wte.data(),wpe.data(), B, T, C, stream);
+
+    }
+    void BatchEncoderBackward(DevVecf& d_wte,DevVecf& d_wpe, const DevVecf& d_outputs,const DevVeci& inputs,int B,int T,int C,int Vp ,int MaxT,cudaStream_t stream){
+        kernel::EncoderBackwardCUDA(d_wte.data(), d_wpe.data(), d_outputs.data(), inputs.data(), B, T, C, stream);
     }
 }

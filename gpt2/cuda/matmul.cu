@@ -11,7 +11,7 @@
     
 
 template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
-void BatchMatmulForward(float * outputs, float const *  inputs , float const * weight, float const * bias ,int B, int T,int  C,int Oc){
+void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const * weight_d, float const * bias_d ,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
     // // The code section below describes datatype for input, output matrices and computation between
     // // elements in input matrices.
     using ElementAccumulator = float;                   // <- data type of accumulator
@@ -33,17 +33,7 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
     using InstructionShape= cutlass::gemm::device::DefaultGemmConfiguration<
         cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
         ElementAccumulator>::InstructionShape;
-    /// Epilogue output operator
-    using alloctor = cutlass::device_memory::allocation<float>;
-    alloctor  inputs_d(B*T *C);
-    alloctor  weight_d(C*Oc);
-    alloctor  outputs_d(B*T *Oc);
-    alloctor  bias_d;
-    inputs_d.copy_from_host(inputs);
-    weight_d.copy_from_host(weight);
-    if(bias != nullptr){
-        bias_d = alloctor(Oc);
-        bias_d.copy_from_host(bias);
+    if(bias_d != nullptr){
 
 
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
@@ -69,10 +59,10 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
         cutlass::gemm::GemmCoord problem_size(T, Oc, C);
 
         
-        auto A_m = cutlass::make_TensorRef(inputs_d.get(),LayoutA::packed({T,C}));
-        auto B_m = cutlass::make_TensorRef(weight_d.get(),LayoutB::packed({C,Oc}));
-        auto C_m = cutlass::make_TensorRef(bias_d.get(), cutlass::layout::RowMajor());
-        auto D_m = cutlass::make_TensorRef(outputs_d.get(), cutlass::layout::RowMajor::packed({T,Oc}));
+        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutA::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,LayoutB::packed({C,Oc}));
+        auto C_m = cutlass::make_TensorRef(bias_d, cutlass::layout::RowMajor());
+        auto D_m = cutlass::make_TensorRef(outputs_d, cutlass::layout::RowMajor::packed({T,Oc}));
 
         typename Gemm::Arguments argument{
             problem_size,
@@ -88,8 +78,7 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
             B
         };
 
-        gemm(argument);
-        outputs_d.copy_to_host(outputs);
+        gemm(argument,stream);
     }else {
 
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
@@ -115,9 +104,9 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
         cutlass::gemm::GemmCoord problem_size(T, Oc, C);
 
         
-        auto A_m = cutlass::make_TensorRef(inputs_d.get(),LayoutA::packed({T,C}));
-        auto B_m = cutlass::make_TensorRef(weight_d.get(),LayoutB::packed({C,Oc}));
-        auto D_m = cutlass::make_TensorRef(outputs_d.get(), cutlass::layout::RowMajor::packed({T,Oc}));
+        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutA::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,LayoutB::packed({C,Oc}));
+        auto D_m = cutlass::make_TensorRef(outputs_d, cutlass::layout::RowMajor::packed({T,Oc}));
 
 
         typename Gemm::Arguments argument{
@@ -134,13 +123,12 @@ void BatchMatmulForward(float * outputs, float const *  inputs , float const * w
             B
         };
 
-        gemm(argument);
-        outputs_d.copy_to_host(outputs);
+        gemm(argument,stream);
     }
 }
 
 template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
-void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float const * d_outputs, float const *  inputs , float const * weight,int B, int T,int  C,int Oc){
+void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,float const * d_outputs_d, float const *  inputs_d , float const * weight_d,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
 
     // // The code section below describes datatype for input, output matrices and computation between
     // // elements in input matrices.
@@ -165,26 +153,6 @@ void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float 
         ElementAccumulator>::InstructionShape;
     /// Epilogue output operator
     using alloctor = cutlass::device_memory::allocation<float>;
-    alloctor  weight_d;
-    alloctor  inputs_d;
-    alloctor  d_outputs_d;
-    alloctor  d_inputs_d;
-    alloctor  d_weight_d;
-    try {
-        weight_d  = alloctor(C*Oc);
-        inputs_d  = alloctor(B*T*C);
-        d_outputs_d = alloctor(B*T *Oc);
-        d_inputs_d = alloctor(B*T *C);
-        d_weight_d = alloctor(C*Oc);
-    } catch (const cutlass::cuda_exception& e) {
-        std::cerr<<"CUDA memory allocll error: " << e.what() << std::endl;
-    }
-
-    d_outputs_d.copy_from_host(d_outputs);
-    inputs_d.copy_from_host(inputs);
-    weight_d.copy_from_host(weight);
-    d_inputs_d.copy_from_host(d_inputs);
-    d_weight_d.copy_from_host(d_weight);
 
     {
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
@@ -210,10 +178,10 @@ void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float 
         cutlass::gemm::GemmCoord problem_size(T, C, Oc);
 
         
-        auto A_m = cutlass::make_TensorRef(d_outputs_d.get(),LayoutA::packed({T,Oc}));
+        auto A_m = cutlass::make_TensorRef(d_outputs_d,LayoutA::packed({T,Oc}));
         //d_input = d_output @ weight's transpose
-        auto B_m = cutlass::make_TensorRef(weight_d.get(),cutlass::layout::LayoutTranspose<LayoutB>::type::packed({Oc,C}));
-        auto C_m = cutlass::make_TensorRef(d_inputs_d.get(),cutlass::layout::RowMajor::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,cutlass::layout::LayoutTranspose<LayoutB>::type::packed({Oc,C}));
+        auto C_m = cutlass::make_TensorRef(d_inputs_d,cutlass::layout::RowMajor::packed({T,C}));
 
         typename GemmABT::Arguments argument{
             problem_size,
@@ -229,7 +197,7 @@ void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float 
             B
         };
 
-        auto status = gemm(argument);
+        auto status = gemm(argument,stream);
         if(status != cutlass::Status::kSuccess){
             std::cerr << cutlass::cutlassGetStatusString(status) << std::endl;
             exit(EXIT_FAILURE);
@@ -265,9 +233,10 @@ void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float 
 
         for(int i = 0 ;i < B ; ++i){
 
-            auto A_m = cutlass::make_TensorRef(inputs_d.get() +i *T*C ,cutlass::layout::LayoutTranspose<LayoutA>::type::packed({C,T}));
-            auto B_m = cutlass::make_TensorRef(d_outputs_d.get() + i * T*Oc,LayoutB::packed({T,Oc}));
-            auto C_m = cutlass::make_TensorRef(d_weight_d.get(),cutlass::layout::RowMajor::packed({C,Oc}));
+
+            auto A_m = cutlass::make_TensorRef(inputs_d +i *T*C ,cutlass::layout::LayoutTranspose<LayoutA>::type::packed({C,T}));
+            auto B_m = cutlass::make_TensorRef(d_outputs_d + i * T*Oc,LayoutB::packed({T,Oc}));
+            auto C_m = cutlass::make_TensorRef(d_weight_d,cutlass::layout::RowMajor::packed({C,Oc}));
 
             typename GemmATB::Arguments argument{
                 problem_size,
@@ -287,29 +256,122 @@ void BatchMatmulBackward(float * d_inputs, float* d_weight, float* d_bias,float 
 
     }
 
-    if(d_bias != nullptr){
-        alloctor d_bias_d(Oc);
-        d_bias_d.copy_from_host(d_bias);
-        gpt2cuda::Reduce1D<>(d_bias_d.get(), d_outputs_d.get(), B*T*Oc, Oc);
-        d_bias_d.copy_to_host(d_bias);
+    if(d_bias_d != nullptr){
+        gpt2cuda::Reduce1D<>(d_bias_d, d_outputs_d, B*T*Oc, Oc);
     }
-    d_inputs_d.copy_to_host(d_inputs);
-    d_weight_d.copy_to_host(d_weight);
     
 }
 
 void gpt2cuda::BatchMatmulNNForward(float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T,int  C,int Oc){
-    BatchMatmulForward(outputs, inputs, weight, bias, B, T, C, Oc);
+
+    using alloctor = cutlass::device_memory::allocation<float>;
+    alloctor  inputs_d(B*T *C);
+    alloctor  weight_d(C*Oc);
+    alloctor  outputs_d(B*T *Oc);
+    alloctor  bias_d;
+    inputs_d.copy_from_host(inputs);
+    weight_d.copy_from_host(weight);
+
+    if(bias != nullptr){
+        bias_d = alloctor(Oc);
+        bias_d.copy_from_host(bias);
+        BatchMatmulForward(outputs_d.get(), inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Oc);
+    }else{
+        BatchMatmulForward(outputs_d.get(), inputs_d.get(), weight_d.get(), nullptr, B, T, C, Oc);
+    }
+    outputs_d.copy_to_host(outputs);
 }
 void gpt2cuda::BatchMatmulNTForward(float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T,int  C,int Oc){
-    BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs, inputs, weight, bias, B, T, C, Oc);
+    using alloctor = cutlass::device_memory::allocation<float>;
+    alloctor  inputs_d(B*T *C);
+    alloctor  weight_d(C*Oc);
+    alloctor  outputs_d(B*T *Oc);
+    alloctor  bias_d;
+    inputs_d.copy_from_host(inputs);
+    weight_d.copy_from_host(weight);
+
+    if(bias != nullptr){
+        bias_d = alloctor(Oc);
+        bias_d.copy_from_host(bias);
+        BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs_d.get(), inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Oc);
+    }else{
+
+        BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs_d.get(), inputs_d.get(), weight_d.get(), nullptr, B, T, C, Oc);
+    }
+    outputs_d.copy_to_host(outputs);
+
 }
 void gpt2cuda::BatchMatmulNNBackward(float * d_inputs, float* d_weight, float* d_bias,float const * d_outputs, float const *  inputs , float const * weight,int B, int T,int  C,int Oc){
-    BatchMatmulBackward(d_inputs,d_weight,d_bias,d_outputs,inputs,weight,B,T,C,Oc);
+
+    using alloctor = cutlass::device_memory::allocation<float>;
+    alloctor  weight_d;
+    alloctor  inputs_d;
+    alloctor  d_outputs_d;
+    alloctor  d_inputs_d;
+    alloctor  d_weight_d;
+    try {
+        weight_d  = alloctor(C*Oc);
+        inputs_d  = alloctor(B*T*C);
+        d_outputs_d = alloctor(B*T *Oc);
+        d_inputs_d = alloctor(B*T *C);
+        d_weight_d = alloctor(C*Oc);
+    } catch (const cutlass::cuda_exception& e) {
+        std::cerr<<"CUDA memory allocll error: " << e.what() << std::endl;
+    }
+
+
+    d_outputs_d.copy_from_host(d_outputs);
+    inputs_d.copy_from_host(inputs);
+    weight_d.copy_from_host(weight);
+    d_inputs_d.copy_from_host(d_inputs);
+    d_weight_d.copy_from_host(d_weight);
+    if(d_bias != nullptr){
+        alloctor d_bias_d(Oc);
+        d_bias_d.copy_from_host(d_bias);
+        BatchMatmulBackward(d_inputs_d.get(),d_weight_d.get(),d_bias_d.get(),d_outputs_d.get(),inputs_d.get(),weight_d.get(),B,T,C,Oc);
+        d_bias_d.copy_to_host(d_bias);
+    }else{
+        BatchMatmulBackward(d_inputs_d.get(),d_weight_d.get(),nullptr,d_outputs_d.get(),inputs_d.get(),weight_d.get(),B,T,C,Oc);
+    }
+    d_inputs_d.copy_to_host(d_inputs);
+    d_weight_d.copy_to_host(d_weight);
 
 }
 void gpt2cuda::BatchMatmulNTBackward(float * d_inputs, float* d_weight, float* d_bias,float const * d_outputs, float const *  inputs , float const * weight,int B, int T,int  C,int Oc){
-    BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs,d_weight,d_bias,d_outputs,inputs,weight,B,T,C,Oc);
+
+
+    using alloctor = cutlass::device_memory::allocation<float>;
+    alloctor  weight_d;
+    alloctor  inputs_d;
+    alloctor  d_outputs_d;
+    alloctor  d_inputs_d;
+    alloctor  d_weight_d;
+    try {
+        weight_d  = alloctor(C*Oc);
+        inputs_d  = alloctor(B*T*C);
+        d_outputs_d = alloctor(B*T *Oc);
+        d_inputs_d = alloctor(B*T *C);
+        d_weight_d = alloctor(C*Oc);
+    } catch (const cutlass::cuda_exception& e) {
+        std::cerr<<"CUDA memory allocll error: " << e.what() << std::endl;
+    }
+
+
+    d_outputs_d.copy_from_host(d_outputs);
+    inputs_d.copy_from_host(inputs);
+    weight_d.copy_from_host(weight);
+    d_inputs_d.copy_from_host(d_inputs);
+    d_weight_d.copy_from_host(d_weight);
+    if(d_bias != nullptr){
+        alloctor d_bias_d(Oc);
+        d_bias_d.copy_from_host(d_bias);
+        BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs_d.get(),d_weight_d.get(),d_bias_d.get(),d_outputs_d.get(),inputs_d.get(),weight_d.get(),B,T,C,Oc);
+        d_bias_d.copy_to_host(d_bias);
+    }else{
+        BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs_d.get(),d_weight_d.get(),nullptr,d_outputs_d.get(),inputs_d.get(),weight_d.get(),B,T,C,Oc);
+    }
+    d_inputs_d.copy_to_host(d_inputs);
+    d_weight_d.copy_to_host(d_weight);
 }
 
 void gpt2cuda::BatchMatmulGeluForward(float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T,int  C,int Oc){
@@ -398,4 +460,19 @@ void gpt2cuda::BatchMatmulGeluForward(float * outputs,float const *  inputs , fl
 
 void gpt2cuda::BatchMatmulGeluBackward(float * d_inputs, float* d_weight, float* d_bias,float const * d_outputs, float const *  inputs , float const * weight,int B, int T,int  C,int Oc){
 
+
+
 }
+
+// N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
+void gpt2cuda::BatchMatmulNTForward(DevVecf& outputs,const DevVecf& inputs , const DevVecf& weight, const DevVecf& bias , int B, int T,int  C,int Oc,cudaStream_t stream){
+
+    BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), inputs.data(), weight.data(), bias.data(), B, T, C, Oc,stream);
+
+}
+// N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
+void gpt2cuda::BatchMatmulNTBackward(DevVecf& d_inputs, const DevVecf& d_weight, const DevVecf& d_bias,const DevVecf& d_outputs, const DevVecf& inputs , const DevVecf& weight,int B, int T,int  C,int Oc,cudaStream_t stream){
+    
+    BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),B,T,C,Oc,stream);
+}
+
