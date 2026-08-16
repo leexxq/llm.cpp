@@ -1,3 +1,4 @@
+#include "cuda/pinvector.cuh"
 #include "cuda/softmax.cuh"
 #include "layernorm.cuh"
 #include "log.h"
@@ -6,12 +7,14 @@
 #include "encoder.cuh"
 #include "gpt2cuda.h"
 #include "adamw.h"
-// #include "adamw.cuh"
+#include "adamw.cuh"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <numeric>
-#include <optional>
+
 #include <fstream>
+#include <stdexcept>
 namespace gpt2cuda{
 
 void GPT2Config::Print() const {
@@ -24,7 +27,7 @@ void GPT2Config::Print() const {
 }
 
 
-GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_path_(path), B_(B), T_(T) {
+GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_path_(path), B_(B), T_(T){
 	std::ifstream f{ path, std::ios::binary };
 	if (!f.is_open()) {
         std::cerr << "Error: connot read file: " << path<<std::endl;
@@ -66,53 +69,90 @@ GPT2::GPT2(const std::filesystem::path &path, size_t B, size_t T) : checkpoint_p
 
 
     try {
+        
         //wte(Vp,C) row-major
-        f.read(reinterpret_cast<byte>(wte_.data()),sizeof(float)*C * Vp);
+        PinVecf wte_buffer(C * Vp);
+        f.read(reinterpret_cast<byte>(wte_buffer.data()),sizeof(float)*C * Vp);
+        wte_ = wte_buffer;
         std::cout << "load success wte"  << std::endl;
         //wte(MaxT,C)
-        f.read(reinterpret_cast<byte>(wpe_.data()),sizeof(float)*C * maxT);
+        PinVecf wpe_buffer(C * maxT);
+        f.read(reinterpret_cast<byte>(wpe_buffer.data()),sizeof(float)*C * maxT);
+        wpe_ = wpe_buffer;
         std::cout << "load success wpe"  << std::endl;
 
         for(int i =0 ; i < L; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_ln1_gamma.data()),sizeof(float)*C );
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float)*C );
+            layers_[i].l_ln1_gamma = buffer;
         }
         for(int i =0 ; i < L; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_ln1_beta.data()),sizeof(float)*C );
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float)*C );
+            layers_[i].l_ln1_beta = buffer;
         }
 
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_qkv_weight.data()),sizeof(float)*C* 3 *C );
+            PinVecf buffer(C*3*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float)*C* 3 *C );
+            layers_[i].l_qkv_weight = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_qkv_bias.data()),sizeof(float) * 3*C );
+            PinVecf buffer(3*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * 3*C );
+            layers_[i].l_qkv_bias = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_attproj_weight.data()),sizeof(float) * C*C );
+            PinVecf buffer(C*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * C*C );
+            layers_[i].l_attproj_weight = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_attproj_bias.data()),sizeof(float) * C );
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * C );
+            layers_[i].l_attproj_bias = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_ln2_gamma.data()),sizeof(float) * C );
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * C );
+            layers_[i].l_ln2_gamma = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_ln2_beta.data()),sizeof(float) * C );
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * C );
+            layers_[i].l_ln2_beta = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_fch_weight.data()),sizeof(float) * C * 4*C );
+            PinVecf buffer(4*C*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) * C * 4*C );
+            layers_[i].l_fch_weight = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_fch_bias.data()),sizeof(float) *4*C );
+            PinVecf buffer(4*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) *4*C );
+            layers_[i].l_fch_bias = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_fcproj_weight.data()),sizeof(float) *C*4*C );
+            PinVecf buffer(C*4*C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) *C*4*C );
+            layers_[i].l_fcproj_weight = buffer;
         }
         for(int i = 0 ; i < L ; ++i){
-            f.read(reinterpret_cast<byte>(layers_[i].l_fcproj_bias.data()),sizeof(float) *C);
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) *C);
+            layers_[i].l_fcproj_bias = buffer;
         }
 
-        f.read(reinterpret_cast<byte>(lnf_gamma_.data()),sizeof(float) *C);
-        f.read(reinterpret_cast<byte>(lnf_beta_.data()),sizeof(float) *C);
+        {
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) *C);
+            lnf_gamma_ = buffer;
+        }
+        {
+            PinVecf buffer(C);
+            f.read(reinterpret_cast<byte>(buffer.data()),sizeof(float) *C);
+            lnf_beta_ = buffer;
+        }
 
         std::cout <<"load success lnf_beta"<<std::endl;
         std::cout << "load params MB: " << (params_bytes_ / (1024.0 * 1024.0)) << std::endl; 
@@ -126,15 +166,17 @@ void GPT2::Init(size_t B,size_t T){
     config_.Print();
 
     params_bytes_ = 0;
-    inputs_ = makePinVec<int>({B,T});
-    targets_ = makePinVec<int>({B,T});
+    inputs_ = makeDevVeci(B*T);
+    targets_ = makeDevVeci(B*T);
     params_bytes_ += inputs_.size() * sizeof(int);
     params_bytes_ += targets_.size() * sizeof(int);
+    mean_loss = 0.f;
+
 
     {
         //encoder init
 
-        encoded_ = makePinVecf({B,T,config_.channels});
+        encoded_ = makeDevVecf(B*T*config_.channels);
         params_bytes_ += encoded_.size() * sizeof(float);
 
         //layers init
@@ -144,21 +186,21 @@ void GPT2::Init(size_t B,size_t T){
 		}
 
 
-        wte_ = makePinVecf({config_.padded_vocab_size,config_.channels});//(Vp,C)
-        wpe_ = makePinVecf({config_.max_seq_len,config_.channels});//(maxT,C)
-        dwte_ = makePinVecf({config_.padded_vocab_size,config_.channels});//(Vp,C)
-        dwpe_ = makePinVecf({config_.max_seq_len,config_.channels});//(maxT,C)
+        wte_ = makeDevVecf(config_.padded_vocab_size*config_.channels);//(Vp,C)
+        wpe_ = makeDevVecf(config_.max_seq_len*config_.channels);//(maxT,C)
+        dwte_ = makeDevVecf(config_.padded_vocab_size*config_.channels);//(Vp,C)
+        dwpe_ = makeDevVecf(config_.max_seq_len*config_.channels);//(maxT,C)
 
         params_bytes_ += wte_.size() * sizeof(float);
         params_bytes_ += wpe_.size() * sizeof(float);
         params_bytes_ += dwte_.size() * sizeof(float);
         params_bytes_ += dwpe_.size() * sizeof(float);
 
-        lnf_ = makePinVecf({B,T,config_.channels});
-        lnf_means_= makePinVecf({B,T});//(B,T)
-        lnf_rstds_= makePinVecf({B,T});//(B,T)
-        lnf_gamma_ = makePinVecf({config_.channels}) ;//(C)
-        lnf_beta_  = makePinVecf({config_.channels}) ;//(C)
+        lnf_ = makeDevVecf(B*T*config_.channels);
+        lnf_means_= makeDevVecf(B*T);//(B,T)
+        lnf_rstds_= makeDevVecf(B*T);//(B,T)
+        lnf_gamma_ = makeDevVecf(config_.channels) ;//(C)
+        lnf_beta_  = makeDevVecf(config_.channels) ;//(C)
 
         params_bytes_ += lnf_.size() * sizeof(float);
         params_bytes_ += lnf_means_.size() * sizeof(float);
@@ -166,25 +208,26 @@ void GPT2::Init(size_t B,size_t T){
         params_bytes_ += lnf_gamma_.size() * sizeof(float);
         params_bytes_ += lnf_beta_.size() * sizeof(float);
 
-        residual_ = StdVec<PinVecf>(config_.num_layers,makePinVecf({B,T,config_.channels}));
+        residual_ = StdVec<DevVecf>(config_.num_layers,makeDevVecf(B*T*config_.channels));
 
-        params_bytes_ += residual_.size() * sizeof(PinVecf);
+        params_bytes_ += residual_.size() * sizeof(DevVecf);
 
 
-        logits_ = makePinVecf({B,T,config_.padded_vocab_size});
-        probs_ = makePinVecf({B,T,config_.padded_vocab_size});
-        losses = makePinVecf({B,T});
+
+        logits_ = makeDevVecf(B*T*config_.padded_vocab_size);
+        probs_ = makeDevVecf(B*T*config_.padded_vocab_size);
+        losses = makeDevVecfZero(B*T);
         params_bytes_ += logits_.size() * sizeof(float);
         params_bytes_ += probs_.size() * sizeof(float);
         params_bytes_ += losses.size() * sizeof(float);
 
 
-        dlnf_gamma_ = makePinVecf({config_.channels});//(C)
-        dlnf_beta_  = makePinVecf({config_.channels});//(C)
-        dlogits_ = makePinVecfZero({B,T,config_.padded_vocab_size});
-        dlnf_ = makePinVecfZero({B,T,config_.channels});
-        dresidual3_ = StdVec<PinVecf>(config_.num_layers,makePinVecfZero({B,T,config_.channels}));
-        dencoded_ = makePinVecfZero({B,T,config_.channels});
+        dlnf_gamma_ = makeDevVecf(config_.channels);//(C)
+        dlnf_beta_  = makeDevVecf(config_.channels);//(C)
+        dlogits_ = makeDevVecfZero(B*T*config_.padded_vocab_size);
+        dlnf_ = makeDevVecfZero(B*T*config_.channels);
+        dresidual3_ = StdVec<DevVecf>(config_.num_layers,makeDevVecfZero(B*T*config_.channels));
+        dencoded_ = makeDevVecfZero(B*T*config_.channels);
 
         params_bytes_ += dlnf_gamma_.size() * sizeof(float);
         params_bytes_ += dlnf_beta_.size() * sizeof(float);
@@ -199,57 +242,57 @@ void GPT2::Init(size_t B,size_t T){
 	//params and grads data
 	//will be used for updates
 	{
-		params_memory_.emplace_back(wte_.data(), wte_.size());
-		grads_memory_.emplace_back(dwte_.data(), dwte_.size());
+		params_memory_.emplace_back(&wte_);
+		grads_memory_.emplace_back(&dwte_);
 
-		params_memory_.emplace_back(wpe_.data(), wpe_.size());
-		grads_memory_.emplace_back(dwpe_.data(), dwpe_.size());
+		params_memory_.emplace_back(&wpe_);
+		grads_memory_.emplace_back(&dwpe_);
 		for (auto &layer : layers_) {
-			params_memory_.emplace_back(layer.l_ln1_gamma.data(), layer.l_ln1_gamma.size());
-			grads_memory_.emplace_back(layer.dl_ln1_gamma.data(), layer.dl_ln1_gamma.size());
-			params_memory_.emplace_back(layer.l_ln1_beta.data(), layer.l_ln1_beta.size());
-			grads_memory_.emplace_back(layer.dl_ln1_beta.data(), layer.dl_ln1_beta.size());
+			params_memory_.emplace_back(&layer.l_ln1_gamma);
+			grads_memory_.emplace_back(&layer.dl_ln1_gamma);
+			params_memory_.emplace_back(&layer.l_ln1_beta);
+			grads_memory_.emplace_back(&layer.dl_ln1_beta);
 
-			params_memory_.emplace_back(layer.l_qkv_weight.data(), layer.l_qkv_weight.size());
-			grads_memory_.emplace_back(layer.dl_qkv_weight.data(), layer.dl_qkv_weight.size());
-			params_memory_.emplace_back(layer.l_qkv_bias.data(), layer.l_qkv_bias.size());
-			grads_memory_.emplace_back(layer.dl_qkv_bias.data(), layer.dl_qkv_bias.size());
+			params_memory_.emplace_back(&layer.l_qkv_weight);
+			grads_memory_.emplace_back(&layer.dl_qkv_weight);
+			params_memory_.emplace_back(&layer.l_qkv_bias);
+			grads_memory_.emplace_back(&layer.dl_qkv_bias);
 
-			params_memory_.emplace_back(layer.l_attproj_weight.data(), layer.l_attproj_weight.size());
-			grads_memory_.emplace_back(layer.dl_attproj_weight.data(), layer.dl_attproj_weight.size());
-			params_memory_.emplace_back(layer.l_attproj_bias.data(), layer.l_attproj_bias.size());
-			grads_memory_.emplace_back(layer.dl_attproj_bias.data(), layer.dl_attproj_bias.size());
+			params_memory_.emplace_back(&layer.l_attproj_weight);
+			grads_memory_.emplace_back(&layer.dl_attproj_weight);
+			params_memory_.emplace_back(&layer.l_attproj_bias);
+			grads_memory_.emplace_back(&layer.dl_attproj_bias);
 
-			params_memory_.emplace_back(layer.l_ln2_gamma.data(), layer.l_ln2_gamma.size());
-			grads_memory_.emplace_back(layer.dl_ln2_gamma.data(), layer.dl_ln2_gamma.size());
-			params_memory_.emplace_back(layer.l_ln2_beta.data(), layer.l_ln2_beta.size());
-			grads_memory_.emplace_back(layer.dl_ln2_beta.data(), layer.dl_ln2_beta.size());
+			params_memory_.emplace_back(&layer.l_ln2_gamma);
+			grads_memory_.emplace_back(&layer.dl_ln2_gamma);
+			params_memory_.emplace_back(&layer.l_ln2_beta);
+			grads_memory_.emplace_back(&layer.dl_ln2_beta);
 
-			params_memory_.emplace_back(layer.l_fch_weight.data(), layer.l_fch_weight.size());
-			grads_memory_.emplace_back(layer.dl_fch_weight.data(), layer.dl_fch_weight.size());
-			params_memory_.emplace_back(layer.l_fch_bias.data(), layer.l_fch_bias.size());
-			grads_memory_.emplace_back(layer.dl_fch_bias.data(), layer.dl_fch_bias.size());
+			params_memory_.emplace_back(&layer.l_fch_weight);
+			grads_memory_.emplace_back(&layer.dl_fch_weight);
+			params_memory_.emplace_back(&layer.l_fch_bias);
+			grads_memory_.emplace_back(&layer.dl_fch_bias);
 
-			params_memory_.emplace_back(layer.l_fcproj_weight.data(), layer.l_fcproj_weight.size());
-			grads_memory_.emplace_back(layer.dl_fcproj_weight.data(), layer.dl_fcproj_weight.size());
-			params_memory_.emplace_back(layer.l_fcproj_bias.data(), layer.l_fcproj_bias.size());
-			grads_memory_.emplace_back(layer.dl_fcproj_bias.data(), layer.dl_fcproj_bias.size());
+			params_memory_.emplace_back(&layer.l_fcproj_weight);
+			grads_memory_.emplace_back(&layer.dl_fcproj_weight);
+			params_memory_.emplace_back(&layer.l_fcproj_bias);
+			grads_memory_.emplace_back(&layer.dl_fcproj_bias);
 		}
-
-		params_memory_.emplace_back(lnf_gamma_.data(), lnf_gamma_.size());
-		grads_memory_.emplace_back(dlnf_gamma_.data(), dlnf_gamma_.size());
-		params_memory_.emplace_back(lnf_beta_.data(), lnf_beta_.size());
-		grads_memory_.emplace_back(dlnf_beta_.data(), dlnf_beta_.size());
+        
+		params_memory_.emplace_back(&lnf_gamma_);
+		grads_memory_.emplace_back(&dlnf_gamma_);
+		params_memory_.emplace_back(&lnf_beta_);
+		grads_memory_.emplace_back(&dlnf_beta_);
 	}
 	//AdamW's m and v
 	{
         optimizer_bytes_ = 0;
 		size_t params_size = params_memory_.size();
-		m_ = StdVec<PinVecf>(params_size);
-		v_ = StdVec<PinVecf>(params_size);
+		m_ = StdVec<DevVecf>(params_size);
+		v_ = StdVec<DevVecf>(params_size);
 		for (int i = 0; i < params_size; ++i) {
-			m_[i] = makePinVecfZero({params_memory_[i].second});
-			v_[i] = makePinVecfZero({params_memory_[i].second});
+			m_[i] = makeDevVecfZero(params_memory_[i]->size());
+			v_[i] = makeDevVecfZero(params_memory_[i]->size());
             optimizer_bytes_ += m_[i].size() * sizeof(float);
             optimizer_bytes_ += v_[i].size() * sizeof(float);
 		}
@@ -258,96 +301,110 @@ void GPT2::Init(size_t B,size_t T){
 
 }
 
-void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets){
+void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets,cudaStream_t stream){
     assert(B_ * T_ == inputs.size());
+    this->inputs_ = inputs;
     if(!targets.empty()){
         assert(B_ * T_ == targets.size());
+        this->targets_ = targets;
     }
-
-    this->inputs_.assign(inputs.begin(),inputs.end()) ;
-    this->targets_.assign(targets.begin(),targets.end());
+    
 
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
 
 
-    BatchEncoderForward(encoded_.data(), inputs_.data(),wte_.data(),wpe_.data(),B,T,C,Vp,MaxT);
+    BatchEncoderForward(encoded_, inputs_,wte_,wpe_,B,T,C,Vp,MaxT,stream);
 
-    layers_.front().Forward(residual_.front(),encoded_);
+    layers_.front().Forward(residual_.front(),encoded_,stream);
 
     for(int l = 1 ; l < L; ++l){
-        layers_[l].Forward(residual_[l],residual_[l-1]);
+        layers_[l].Forward(residual_[l],residual_[l-1],stream);
     }
 
-    BatchLayerNormForward(lnf_.data(),lnf_means_.data(),lnf_rstds_.data(),residual_.back().data(),lnf_gamma_.data(),lnf_beta_.data(),B,T,C);
+    BatchLayerNormForward(lnf_,lnf_means_,lnf_rstds_,residual_.back(),lnf_gamma_,lnf_beta_,B,T,C,stream);
 
-    BatchMatmulNTForward(logits_.data(), lnf_.data(),wte_.data(),nullptr, B,T,C,Vp);
+    BatchMatmulNTForward(logits_, lnf_,wte_,DevVecf(), B,T,C,Vp,stream);
 
-    BatchSoftmaxForward(probs_.data(), logits_.data(), B, T, V,Vp);
+    BatchSoftmaxForward(probs_, logits_, B, T, V,Vp,stream);
 
     if(targets_.size() > 0 ) {
-        BatchCrossEntropyForward(losses.data(),probs_.data(),targets_.data(),B,T,Vp);
-        mean_loss = std::optional<float>(0.0f);
-        mean_loss = std::accumulate(losses.begin(),losses.end(),mean_loss.value()) / (B*T);
+        BatchCrossEntropyForward(losses,probs_,targets_,B,T,Vp,stream);
     }else {
-        mean_loss = std::nullopt;
+        mean_loss = -1.f;
+    }
+}
+
+float GPT2::GetLoss(cudaStream_t stream){
+    if(mean_loss < 0.f){
+        throw std::runtime_error("mean_loss is not computed yet. Call Forward() with targets first.");
+    }else{
+        PinVecf losses_h(losses.size());
+        losses.to(losses_h,stream);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        mean_loss = std::accumulate(losses_h.begin(),losses_h.end(),mean_loss) / (B_*T_);
+        return mean_loss;
     }
 }
 
 
+void GPT2::ZeroLoss(cudaStream_t stream){
+    losses.zero(stream);
+    mean_loss = 0.f;
+}
 
-void GPT2::Backward(){
+// #define quick_debug_print(v,stream) \
+// {\
+//     PinVecf v##_h(v.size());\
+//     v.to(v##_h,stream);\
+//     cudaStreamSynchronize(stream);\
+//     std::cout << #v": " << std::endl;\
+//     int i =0;\
+//     for(auto x : v##_h){\
+//         if( ++i > 5) break;\
+//         std::cout << x << " " ;\
+//     }\
+//     std::cout << std::endl;\
+// }
+#define quick_debug_print(v,stream)
+
+
+void GPT2::Backward(cudaStream_t stream){
+
+
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
-    // std::cout << " ---backward--- " << std::endl;
 
-    // std::cout << dlogits_.front() << std::endl;
-    BatchCrossEntropySoftmaxBackward(dlogits_.data(), probs_.data(), targets_.data(),B,T,V,Vp,1.f/(B*T));
+    BatchCrossEntropySoftmaxBackward(dlogits_, probs_, targets_,B,T,V,Vp,1.f/(B*T),stream);
     
-    // std::cout << probs_[0] << std::endl;
-    // std::cout << targets_[0] << std::endl;
 
-    // std::cout << dlogits_[0] << std::endl;
+    DevVecf dummy;
+    BatchMatmulNTBackward(dlnf_,dwte_,dummy,dlogits_,lnf_,wte_,B,T,C,Vp,stream);
 
-    // std::cout << dlnf_.front()  << std::endl;
-    // std::cout << dwte_.front()  << std::endl;
-    BatchMatmulNTBackward(dlnf_.data(),dwte_.data(),nullptr,dlogits_.data(),lnf_.data(),wte_.data(),B,T,C,Vp);
-    // std::cout << dlnf_[0] << std::endl;
-
-    // std::cout << dresidual3_.back().front()  << std::endl;
-    // std::cout << dwte_.front()  << std::endl;
-    BatchLayerNormBackward(dresidual3_.back().data(), dlnf_gamma_.data(), dlnf_beta_.data(), dlnf_.data(), residual_.back().data(), lnf_gamma_.data(), lnf_means_.data(),lnf_rstds_.data(),B,T,C);
-    // std::cout << dresidual3_.back()[0] << std::endl;
+    BatchLayerNormBackward(dresidual3_.back(), dlnf_gamma_, dlnf_beta_, dlnf_, residual_.back(), lnf_gamma_, lnf_means_,lnf_rstds_,B,T,C,stream);
 
     for(int l = L - 1; l > 0 ; --l){
-        // std::cout << dresidual3_[l - 1].front()  << std::endl;
-        layers_[l].Backward(dresidual3_[l - 1],dresidual3_[l],residual_[l-1]);
-        // std::cout << dresidual3_[l-1][0] << std::endl;
+        layers_[l].Backward(dresidual3_[l - 1],dresidual3_[l],residual_[l-1],stream);
     }
 
-    // std::cout << dencoded_.front() << std::endl;
-    layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_);
+    layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_,stream);
+    quick_debug_print(dencoded_,stream);
 
-    // std::cout << dwte_.front() << std::endl;
-    // std::cout << dwpe_.front() << std::endl;
-    BatchEncoderBackward(dwte_.data(),dwpe_.data(),dencoded_.data(),inputs_.data(),B,T,C,Vp,MaxT);
-    // std::cout << dencoded_[0] << std::endl;
+    BatchEncoderBackward(dwte_,dwpe_,dencoded_,inputs_,B,T,C,Vp,MaxT,stream);
+    quick_debug_print(dwte_,stream);
 
+    
+    
 }
 
 
-void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t) {
+void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t,cudaStream_t stream) {
 
-	// size_t params_size = params_memory_.size();
-	// for (int i = 0; i < params_size; ++i) {
-	// 	auto [data, size] = params_memory_[i];
-	// 	auto [grads_data, grads_size] = grads_memory_[i];
-	// 	assert(size == grads_size && size == m_[i].size());
-    //     AdamW(data,grads_data,m_[i].data(),v_[i].data(),m_[i].size(),lr,beta1,beta1,eps,weight,t);
-	// }
-	AdamWParams adamw_params{
+	size_t params_size = params_memory_.size();
+
+	AdamWConfig adamw_params{
 		lr,
 		beta1,
 		beta2,
@@ -356,20 +413,38 @@ void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, i
 		t
 	};
 
-	size_t params_size = params_memory_.size();
 	for (int i = 0; i < params_size; ++i) {
-		auto [data, size] = params_memory_[i];
-		auto [grads_data, grads_size] = grads_memory_[i];
+		auto& data = *params_memory_[i];
+		auto& grad_data = *grads_memory_[i];
+		auto size = data.size();
+		auto grads_size = grad_data.size();
 		assert(size == grads_size && size == m_[i].size());
-		AdamW(data, grads_data, m_[i].data(), v_[i].data(), m_[i].size(), adamw_params);
+        AdamW(data,grad_data,m_[i],v_[i],size,adamw_params,stream);
 	}
+	// AdamWParams adamw_params{
+	// 	lr,
+	// 	beta1,
+	// 	beta2,
+	// 	eps,
+	// 	weight,
+	// 	t
+	// };
 
+	// size_t params_size = params_memory_.size();
+	// for (int i = 0; i < params_size; ++i) {
+	// 	auto [data, size] = params_memory_[i];
+	// 	auto [grads_data, grads_size] = grads_memory_[i];
+	// 	assert(size == grads_size && size == m_[i].size());
+	// 	AdamW(data, grads_data, m_[i].data(), v_[i].data(), m_[i].size(), adamw_params);
+	// }
 
-    std::cout << "Update Successfully!"  << std::endl;
 }
 
 void SetZero(PinVecf& v){
     v.assign(v.size(),0);
+}
+void SetZero(DevVecf& v,cudaStream_t stream){
+    v.zero(stream);
 }
 
 void SetZero(StdVec<PinVecf>& v){
@@ -377,73 +452,68 @@ void SetZero(StdVec<PinVecf>& v){
         SetZero(vv);
     }
 }
-void ZeroGrad(Layer& l){
-        SetZero(l.dl_residual2);    
 
-        SetZero(l.dl_fcproj);       
-        SetZero(l.dl_fcproj_weight );
-        SetZero(l.dl_fcproj_bias);  
+void SetZero(StdVec<DevVecf>& v,cudaStream_t stream){
+    for(auto & vv : v){
+        SetZero(vv,stream);
+    }
+}
+void ZeroGrad(Layer& l,cudaStream_t stream){
+        SetZero(l.dl_residual2,stream);    
 
-        SetZero(l.dl_fch_gelu);     
+        SetZero(l.dl_fcproj,stream);       
+        SetZero(l.dl_fcproj_weight ,stream);
+        SetZero(l.dl_fcproj_bias,stream);  
 
-        SetZero(l.dl_fch);          
-        SetZero(l.dl_fch_weight);   
-        SetZero(l.dl_fch_bias);     
+        SetZero(l.dl_fch_gelu,stream);     
 
-        SetZero(l.dl_ln2);          
-        SetZero(l.dl_ln2_gamma);    
-        SetZero(l.dl_ln2_beta);     
+        SetZero(l.dl_fch,stream);          
+        SetZero(l.dl_fch_weight,stream);   
+        SetZero(l.dl_fch_bias,stream);     
+
+        SetZero(l.dl_ln2,stream);          
+        SetZero(l.dl_ln2_gamma,stream);    
+        SetZero(l.dl_ln2_beta,stream);     
 
 
 
-        SetZero(l.dl_attproj);      
-        SetZero(l.dl_attproj_weight);
-        SetZero(l.dl_attproj_bias); 
+        SetZero(l.dl_attproj,stream);      
+        SetZero(l.dl_attproj_weight,stream);
+        SetZero(l.dl_attproj_bias,stream); 
 
-        SetZero(l.dl_atty);         
+        SetZero(l.dl_atty,stream);         
 
-        SetZero(l.dl_qkv);          
-        SetZero(l.dl_qkv_weight);   
-        SetZero(l.dl_qkv_bias);     
+        SetZero(l.dl_qkv,stream);          
+        SetZero(l.dl_qkv_weight,stream);   
+        SetZero(l.dl_qkv_bias,stream);     
 
-        SetZero(l.dl_ln1);          
-        SetZero(l.dl_ln1_gamma);    
-        SetZero(l.dl_ln1_beta);     
+        SetZero(l.dl_ln1,stream);          
+        SetZero(l.dl_ln1_gamma,stream);    
+        SetZero(l.dl_ln1_beta,stream);     
 }
 
-void GPT2::ZeroGrad(){
-    SetZero(dlogits_);
-    SetZero(dlnf_);
-    SetZero(dresidual3_);
-    SetZero(dencoded_);
-    SetZero(dwte_);
-    SetZero(dwpe_);
+void GPT2::ZeroGrad(cudaStream_t stream){
+    SetZero(dlogits_,stream);
+    SetZero(dlnf_,stream);
+    SetZero(dresidual3_,stream);
+    SetZero(dencoded_,stream);
+    SetZero(dwte_,stream);
+    SetZero(dwpe_,stream);
 
     for(auto & layer : layers_){
-        gpt2cuda::ZeroGrad(layer);
+        gpt2cuda::ZeroGrad(layer,stream);
     }
 
 
-    SetZero(dlnf_);
-    SetZero(dlnf_gamma_);
-    SetZero(dlnf_beta_);
+    SetZero(dlnf_,stream);
+    SetZero(dlnf_gamma_,stream);
+    SetZero(dlnf_beta_,stream);
 }
 
-int GPT2::Sample(int b,int t ,float coin, SampleMethod method){
-    if(method == SampleMethod::Mult){
-        float cdf = 0.f;
-        float * probs_bt = probs_.data() + b*T_*config_.padded_vocab_size + t * config_.padded_vocab_size;
-        for (int i = 0; i < config_.padded_vocab_size; ++i) {
-            cdf += probs_bt[i];
-            if (coin < cdf) {
-                return i;
-            }
-        }
-        return config_.padded_vocab_size - 1;
-    }else {
-        ERROR_PRINTLN("SampleMethod get a imposible value!");
-        exit(-1);
-    }
-}
+
+
+
+    
+
 
 }

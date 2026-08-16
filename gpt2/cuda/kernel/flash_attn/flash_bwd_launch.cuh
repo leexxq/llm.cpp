@@ -32,7 +32,9 @@ namespace kernel {
         assert(T % Bc == 0);
         CUTE_STATIC_ASSERT_V(bool_constant<Hc == 32 || Hc == 64>(),"Hc is not supported");
 
-        auto D = cutlass::device_memory::allocation<float>(B*NH*T);
+
+        float * D;
+        CUDA_CHECK(cudaMallocAsync(&D,sizeof(float) * B*NH*T,stream));
 
         auto L_Q= make_layout(make_shape(int{B}, int{NH}, int{T},Int<Hc>{}), make_stride(int{T} * int{C3}, Int<Hc>{}, int{C3}, Int<1>{}));
         
@@ -94,11 +96,12 @@ namespace kernel {
                                     outputs,L_O,
                                     d_outputs,L_dO,
                                     L,L_L,
-                                    D.get(),L_D,
+                                    D,L_D,
                                     dQ,L_Q,
                                     dK,L_K,
                                     dV,L_V);
         CUDA_CHECK_LAST();
+        CUDA_CHECK(cudaFreeAsync(D,stream));
     }
 }
 }

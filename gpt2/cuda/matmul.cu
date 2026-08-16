@@ -34,8 +34,6 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
         cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
         ElementAccumulator>::InstructionShape;
     if(bias_d != nullptr){
-
-
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
         1,
         ElementAccumulator,
@@ -467,12 +465,19 @@ void gpt2cuda::BatchMatmulGeluBackward(float * d_inputs, float* d_weight, float*
 // N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
 void gpt2cuda::BatchMatmulNTForward(DevVecf& outputs,const DevVecf& inputs , const DevVecf& weight, const DevVecf& bias , int B, int T,int  C,int Oc,cudaStream_t stream){
 
-    BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), inputs.data(), weight.data(), bias.data(), B, T, C, Oc,stream);
+    if(bias.size() > 0){
+        BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), inputs.data(), weight.data(), bias.data(), B, T, C, Oc,stream);
+    }else{
+        BatchMatmulForward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), inputs.data(), weight.data(), nullptr, B, T, C, Oc,stream);
+    }
 
 }
 // N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
-void gpt2cuda::BatchMatmulNTBackward(DevVecf& d_inputs, const DevVecf& d_weight, const DevVecf& d_bias,const DevVecf& d_outputs, const DevVecf& inputs , const DevVecf& weight,int B, int T,int  C,int Oc,cudaStream_t stream){
-    
-    BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),B,T,C,Oc,stream);
+void gpt2cuda::BatchMatmulNTBackward(DevVecf& d_inputs,  DevVecf& d_weight, DevVecf& d_bias,const DevVecf& d_outputs, const DevVecf& inputs , const DevVecf& weight,int B, int T,int  C,int Oc,cudaStream_t stream){
+    if(d_bias.size() > 0){
+        BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),B,T,C,Oc,stream);
+    }else{
+        BatchMatmulBackward<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(d_inputs.data(),d_weight.data(),nullptr      ,d_outputs.data(),inputs.data(),weight.data(),B,T,C,Oc,stream);
+    }
 }
 

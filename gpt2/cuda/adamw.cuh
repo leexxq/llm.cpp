@@ -2,7 +2,12 @@
 #include "devvector.cuh"
 namespace gpt2cuda {
     struct AdamWConfig{
-    float lr;float beta1;float beta2;float eps;float weight_decay;int t;
+        float lr;
+        float beta1;
+        float beta2;
+        float eps;
+        float weight_decay;
+        int t;
     };
     void AdamW(float* data, float const * grad_data, float* m, float* v, std::size_t size, 
     float lr,float beta1,float beta2,float eps,float weight_decay,int t);

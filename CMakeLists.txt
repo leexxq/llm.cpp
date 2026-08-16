@@ -101,7 +101,7 @@ if(ENABLE_CUDA)
 	aux_source_directory(gpt2/cuda GPT2_CUDA_SOURCES)
 	add_library(gpt2cuda STATIC ${GPT2_CUDA_SOURCES} )
 
-	target_include_directories(gpt2cuda PRIVATE 
+	target_include_directories(gpt2cuda PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/include
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
 		${CMAKE_CURRENT_SOURCE_DIR}/gpt2
@@ -115,7 +115,7 @@ if(ENABLE_CUDA)
         )
     endif()
 
-	target_link_libraries(gpt2cuda PRIVATE CUDA::cudart PUBLIC fmt::fmt)
+	target_link_libraries(gpt2cuda PUBLIC CUDA::cudart PUBLIC fmt::fmt)
 
 	target_compile_options(gpt2cuda PRIVATE
 		$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
@@ -198,9 +198,6 @@ if(ENABLE_CUDA)
 	add_executable(traingpt2cuda traincuda.cpp utils/dataloader.cpp utils/tokenizer.cpp gpt2/adamw.cpp)
 	target_link_libraries(traingpt2cuda PRIVATE CLI11::CLI11 PRIVATE gpt2cuda PRIVATE CUDA::cudart )
 
-	target_include_directories(traingpt2cuda PRIVATE 
-		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
-	)
 
 	if(OpenMP_CXX_FOUND)
 		target_link_libraries(traingpt2cuda PUBLIC $<$<CONFIG:Release>:OpenMP::OpenMP_CXX>)

@@ -132,6 +132,7 @@ void DataLoader::NextBatch(StdVec<int>& inputs,StdVec<int>& targets) {
 	++current_sample_idx_;
 }
 
+
 void DataLoader::ReadTokenfileToBuffer(){
 	assert(!should_shuffle_ || (should_shuffle_ && !intra_shard_indices_.empty()));
 	assert(current_sample_idx_ < shard_num_samples_);
@@ -163,6 +164,7 @@ void DataLoader::LoadBatch(StdVec<int>& inputs,StdVec<int>& targets) {
 		// DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
 	}
 }
+
 
 // void DataLoader::LoadBatch( Mati& inputs,  Mati& targets) {
 // 	ReadTokenfileToBuffer();

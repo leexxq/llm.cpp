@@ -7,7 +7,7 @@ namespace gpt2cuda{
 namespace kernel {
 
 __global__ void AdamWKernel(
-float* data ,float* grad_data, float *m ,float * v ,  std::size_t size, 
+float* data ,float const* grad_data, float *m ,float * v ,  std::size_t size, 
         float lr,float beta1,float beta2,float eps,float weight_decay,int t
 ){
     const int idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -18,7 +18,7 @@ float* data ,float* grad_data, float *m ,float * v ,  std::size_t size,
 
         float m_ = beta1 * m[idx] + (1.0f - beta1) * grad;
         float v_ = beta2 * v[idx] + (1.0f - beta2) * grad * grad;
-
+        
         float m_hat = m_ / (1.0f - powf(beta1, t));
         float v_hat = v_ / (1.0f - powf(beta2, t));
 
@@ -30,7 +30,7 @@ float* data ,float* grad_data, float *m ,float * v ,  std::size_t size,
 }
 
 template<int threads=256>
-void AdamWCUDA(float* data ,float* grad_data, float *m ,float * v ,  std::size_t size, 
+void AdamWCUDA(float* data ,float const* grad_data, float *m ,float * v ,  std::size_t size, 
     float lr,float beta1,float beta2,float eps,float weight_decay,int t,cudaStream_t stream){
         AdamWKernel<<<(size + threads - 1) / threads,threads,0,stream>>>(data, grad_data, m, v, size, lr, beta1, beta2, eps, weight_decay, t);
         CUDA_CHECK_LAST();

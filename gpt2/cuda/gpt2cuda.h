@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
-#include <optional>
-#include <utility>
+#include <stdexcept>
 #include "pinvector.cuh"
+#include "devvector.cuh"
 #include "layer.cuh"
+#include<random>
 
 namespace gpt2cuda {
 
@@ -24,27 +26,31 @@ namespace gpt2cuda {
 
     class GPT2 {
     public:
-        using Data_t = std::pair<float*, size_t>;
+        enum class SampleMethod{
+            Mult,
+        };
+
 
     private:
         GPT2Config config_;
         // the weights (parameters) of the model, and their sizes
         size_t num_parameters;
+        
 
-        StdVec<Data_t> params_memory_;
-        StdVec<Data_t> grads_memory_;
+        StdVec<DevVecf*> params_memory_;
+        StdVec<DevVecf*> grads_memory_;
         // gradients of the weights
         // buffers for the AdamW optimizer
-        StdVec<PinVecf> m_;
-        StdVec<PinVecf> v_;
+        StdVec<DevVecf> m_;
+        StdVec<DevVecf> v_;
         // the activations of the model, and their sizes
         size_t num_activations;
         // gradients of the activations
         // other run state configuration
         // size_t batch_size; // the batch size (B) of current forward pass
         // size_t seq_len; // the sequence length (T) of current forward pass
-        PinVeci inputs_; // the input tokens for the current forward pass
-        PinVeci targets_; // the target tokens for the current forward pass
+        DevVeci inputs_; // the input tokens for the current forward pass
+        DevVeci targets_; // the target tokens for the current forward pass
 
         // Encoder encoder_;
         // LayerNorm layernormf_;
@@ -55,65 +61,72 @@ namespace gpt2cuda {
         size_t B_;
         size_t T_;
 
-        PinVecf wte_;//(Vp,C)
-        PinVecf wpe_;//(maxT,C)
+        DevVecf wte_;//(Vp,C)
+        DevVecf wpe_;//(maxT,C)
 
-        PinVecf dwte_; //(Vp,C)
-        PinVecf dwpe_; //(maxT,C)
+        DevVecf dwte_; //(Vp,C)
+        DevVecf dwpe_; //(maxT,C)
 
-        PinVecf encoded_;//(B,T,C)
-        StdVec<PinVecf> residual_;//(L,B,T,C)
-        PinVecf lnf_;//(B,T,C)
+        DevVecf encoded_;//(B,T,C)
+        StdVec<DevVecf> residual_;//(L,B,T,C)
+        DevVecf lnf_;//(B,T,C)
         
-        PinVecf lnf_means_;//(B,T)
-        PinVecf lnf_rstds_;//(B,T)
+        DevVecf lnf_means_;//(B,T)
+        DevVecf lnf_rstds_;//(B,T)
 
-        PinVecf lnf_gamma_;//(C)
-        PinVecf lnf_beta_;//(C)
+        DevVecf lnf_gamma_;//(C)
+        DevVecf lnf_beta_;//(C)
 
-        PinVecf dlnf_gamma_;//(C)
-        PinVecf dlnf_beta_;//(C)
+        DevVecf dlnf_gamma_;//(C)
+        DevVecf dlnf_beta_;//(C)
         
 
-        PinVecf logits_;//(B,T,Vp)
+        DevVecf logits_;//(B,T,Vp)
 
-        PinVecf dlogits_;//(B,T,Vp)
-        PinVecf dlnf_;//(B,T,C)
-        StdVec<PinVecf> dresidual3_;//(L,B,T,C)
-        PinVecf dencoded_;//(B,T,C)
+        DevVecf dlogits_;//(B,T,Vp)
+        DevVecf dlnf_;//(B,T,C)
+        StdVec<DevVecf> dresidual3_;//(L,B,T,C)
+        DevVecf dencoded_;//(B,T,C)
 
         
 
         std::size_t params_bytes_;
         std::size_t optimizer_bytes_;
         std::filesystem::path checkpoint_path_;
-        PinVecf probs_;//(B,T,Vp)
+
     public:
-        PinVecf losses; // (B,T)
-        std::optional<float> mean_loss; // after a forward pass with targets, will be populated with the mean loss
+        DevVecf probs_;//(B,T,Vp)
+        DevVecf losses; // (B,T)
+        float mean_loss = -1.f; 
 
     private:
+        void CUDART_CB static on_probs_ready(void *userData);
         void Init(size_t B, size_t T);
-
     public:
-        enum class SampleMethod{
-            Mult,
-        };
-        GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 } {}
-        GPT2(GPT2Config config, size_t B, size_t T) : config_{ config }, B_(B), T_(T) {}
+        GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 }{}
+        GPT2(GPT2Config config, size_t B, size_t T) : config_{ config }, B_(B), T_(T){Init(B, T);}
         GPT2(const std::filesystem::path &path, size_t B, size_t T);
         GPT2(const GPT2 &gpt2) = delete;
         GPT2(const GPT2 &&gpt2) = delete;
-        void Forward(const StdVeci &, const StdVeci &);
-        void Forward(const  StdVeci &inputs) {
+        void Forward(const StdVeci &, const StdVeci &,cudaStream_t stream);
+        void Forward(const  StdVeci &inputs,cudaStream_t stream) {
             StdVec<int> targets;
-            Forward(inputs, targets);
+            Forward(inputs, targets,stream);
         }
-        void Backward();
-        void ZeroGrad();
-        void Update(float lr, float beta1, float beta2, float eps, float weight, int t);
-        using VecBTC = StdVec<StdVec<PinVecf>>;
-        int Sample(int b,int t ,float coin, SampleMethod method);
+        void GetProbs(PinVecf& host,cudaStream_t stream){
+            probs_.to(host,stream);
+        }
+        size_t GetProbsSize() const{
+            return B_*T_*config_.padded_vocab_size;
+        }
+        float GetLoss(cudaStream_t stream) ;
+        void ZeroLoss(cudaStream_t stream) ;
+        
+
+
+        void Backward(cudaStream_t stream);
+        void ZeroGrad(cudaStream_t stream);
+        void Update(float lr, float beta1, float beta2, float eps, float weight, int t,cudaStream_t stream);
     };
 
 }

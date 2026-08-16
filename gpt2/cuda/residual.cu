@@ -75,7 +75,7 @@ namespace gpt2cuda {
         kernel::ResidualForwardCUDA<>(outputs.data(), inputs1.data(), inputs2.data(),B*T*C);
 
     }
-    void BatchResidualBackward(DevVecf& d_inputs1, const DevVecf& d_inputs2, const DevVecf& d_outputs, size_t B, size_t T, size_t C,cudaStream_t stream){
+    void BatchResidualBackward(DevVecf& d_inputs1, DevVecf& d_inputs2, const DevVecf& d_outputs, size_t B, size_t T, size_t C,cudaStream_t stream){
         kernel::ResidualBackwardCUDA(d_inputs1.data(), d_inputs2.data(), d_outputs.data(),B*T*C);
 
     }

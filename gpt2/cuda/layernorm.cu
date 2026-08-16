@@ -155,14 +155,14 @@ namespace kernel {
 
     // }
 
-    __global__ void ComputeHatInputsKernel(float*inputs,float const*means,float const* rstds,int B,int T,int C){
+    __global__ void ComputeHatInputsKernel(float* outputs , float const *inputs,float const*means,float const* rstds,int B,int T,int C){
 
         const int bidx = blockIdx.x;
         const int tidx = threadIdx.x; 
         const int idx = tidx + bidx * blockDim.x;
 
         if(idx < B*T*C){
-            inputs[idx] = (inputs[idx] - means[idx / C]) *rstds[idx / C];
+            outputs[idx] = (inputs[idx] - means[idx / C]) *rstds[idx / C];
         }
 
     }
@@ -273,11 +273,15 @@ namespace kernel {
 
     //require device memory 
     template <int threads=256,int K =1> 
-    void LayerNormBackwardCUDA(float * d_inputs , float * d_gamma, float * d_beta, float const * d_outputs, float * inputs, float const * gamma,float const * means, float const * rstds, int B, int T, int C,cudaStream_t stream = 0){
+    void LayerNormBackwardCUDA(float * d_inputs , float * d_gamma, float * d_beta, float const * d_outputs, float const * inputs, float const * gamma,float const * means, float const * rstds, int B, int T, int C,cudaStream_t stream = 0){
 
+        
+
+        float * inputs_hat;
+        CUDA_CHECK(cudaMallocAsync(&inputs_hat,sizeof(float) * B*T*C,stream));
         assert(C!=0);
         //convert inputs to  \hat{x}_{ij}
-        ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(inputs,means,rstds, B,T,C);
+        ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(inputs_hat,inputs,means,rstds, B,T,C);
         CUDA_CHECK_LAST();
 
         // CUDA_CHECK(cudaDeviceSynchronize());
@@ -289,16 +293,16 @@ namespace kernel {
         // constexpr int threads = warp_threads * warp_count;
         int blocks = (C+ warp_count - 1)/ warp_count;
 
-        GammaAndBetaDerivateKernel<<<blocks,threads,0,stream>>>(d_gamma, d_beta, d_outputs, inputs,B,T, C);
+        GammaAndBetaDerivateKernel<<<blocks,threads,0,stream>>>(d_gamma, d_beta, d_outputs, inputs_hat,B,T, C);
         CUDA_CHECK_LAST();
 
         assert((B*T)% K == 0);
 
         //compute d_inputs
         //compute one row by blocks
-        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C,stream>>>(d_inputs, d_outputs , inputs, gamma,rstds, B,T,C);
+        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C,stream>>>(d_inputs, d_outputs , inputs_hat, gamma,rstds, B,T,C);
         CUDA_CHECK_LAST();
-
+        CUDA_CHECK(cudaFreeAsync(inputs_hat,stream));
     }
 
 }

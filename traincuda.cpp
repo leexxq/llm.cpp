@@ -1,16 +1,21 @@
 #include "CLI/CLI.hpp"
+#include "cuda/error.cuh"
 #include "gpt2/cuda/gpt2cuda.h"
 #include "utils/dataloader.h"
 #include "utils/tokenizer.h"
 #include "gpt2/log.h"
+#include "cutlass/util/GPU_Clock.hpp"
 
 #include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
+#include <random>
 #include <string>
 using namespace gpt2cuda;
+
 
 void SafePrint(const std::string &rep) {
 	if (rep.empty()) {
@@ -22,6 +27,90 @@ void SafePrint(const std::string &rep) {
 	INFO_PRINT("{}", rep);
 }
 
+struct GenContext{
+	public:
+		float* coins;
+		int* gen_context;//(B,T)
+		Tokenizer* tokenizer;
+		std::size_t vocab_size;
+		std::size_t next_token_idx;
+		std::size_t batch_size;
+		std::size_t seq_len;
+		float* probs;//(B,T,Vp)
+	public:
+		GenContext(){};
+		GenContext(int * gen_context,size_t start_idx,float * probs,float* coins,Tokenizer* tokenizer,size_t B,size_t T,size_t probs_size){
+			this->gen_context = gen_context;
+			this->coins = coins;
+			this->next_token_idx = start_idx;
+			this->probs = probs;
+			this->batch_size = B;
+			this->seq_len = T;
+			this->vocab_size = probs_size / (B * T);
+			this->tokenizer = tokenizer;
+		};
+};
+
+void CUDART_CB on_probs_ready(void *userData) {
+    GenContext* ctx = reinterpret_cast<GenContext*>(userData);
+    float* probs = ctx->probs;
+    int* gen_context = ctx->gen_context;
+    std::size_t vocab_size = ctx->vocab_size;
+    std::size_t batch_size = ctx->batch_size;
+    std::size_t next_token_idx = ctx->next_token_idx;
+    std::size_t seq_len = ctx->seq_len;
+
+    for(int b= 0 ; b < batch_size; ++b){
+        float cdf = 0.f;
+		gen_context[b*seq_len + next_token_idx] = vocab_size - 1; 
+        for (int i = 0; i < vocab_size; ++i) {
+            cdf += probs[b *seq_len * vocab_size + (next_token_idx -1 )* vocab_size + i];
+            if (ctx->coins[b] < cdf) {
+                gen_context[b*seq_len + next_token_idx] = i;
+				break;
+            }
+        }
+    }
+}
+
+void CUDART_CB on_token_ready(void * userData){
+    GenContext* ctx = reinterpret_cast<GenContext*>(userData);
+	int next_token = ctx->gen_context[ctx->next_token_idx];
+	Tokenizer& tokenizer = *(ctx->tokenizer);
+	if (tokenizer) {
+		auto rep = tokenizer.decode(next_token);
+		SafePrint(rep);
+	} else {
+		INFO_PRINT("{}", next_token);
+	}
+	std::fflush(stdout);
+}
+
+template<class RandomEngine>
+void GenerateText(StdVeci& gen_tokens,Tokenizer& tokenizer,gpt2cuda::GPT2& gpt2,size_t genT,size_t B,size_t T,RandomEngine re,cudaStream_t stream){
+	INFO_PRINTLN("Generating:\n---");
+	PinVecf probs(gpt2.GetProbsSize());
+	StdVec<GenContext> contexts;
+	contexts.reserve(genT - 1);
+	StdVec<StdVecf> coins(genT-1);
+	cudaEvent_t gen_finish_event;
+	CUDA_CHECK(cudaEventCreate(&gen_finish_event));
+	std::uniform_real_distribution<float> real_dist(0, 1);
+	for (size_t t = 1; t < genT; ++t) {
+		for(int i =0 ; i < B ; ++i){
+			coins[t-1].emplace_back(real_dist(re));
+		}
+		contexts.emplace_back(gen_tokens.data(),t,probs.data(),coins[t-1].data(),&tokenizer,B,T,gpt2.GetProbsSize());
+		gpt2.Forward(gen_tokens,stream);
+		gpt2.GetProbs(probs, stream);
+		CUDA_CHECK(cudaLaunchHostFunc(stream, on_probs_ready, &contexts.back()));
+		CUDA_CHECK(cudaLaunchHostFunc(stream, on_token_ready, &contexts.back()));
+	}
+	CUDA_CHECK(cudaEventRecord(gen_finish_event));
+	CUDA_CHECK(cudaEventSynchronize(gen_finish_event));
+	INFO_PRINTLN("");
+
+}
 
 
 
@@ -71,7 +160,6 @@ int main(int argc, char **argv) {
 
 
 	constexpr uint64_t rng_state = 1337;
-	std::uniform_real_distribution<float> real_dist(0, 1);
 
 	std::mt19937 shuffle_rng{ rng_state };
 	gpt2cuda::StdVec<int> gen_tokens(B*T);
@@ -81,62 +169,84 @@ int main(int argc, char **argv) {
 	StdVec<int> inputs(B*T);
 	StdVec<int> targets(B*T);
 	bool next_batch = true;
+	int log_iterations = 10;
+	
+	cudaStream_t stream;
+	cudaStreamCreate(&stream);
+	float duration = 0;
+	float duration_f = 0;
+	float duration_b = 0;
+	float duration_u = 0;
 
 	for (int step = 0; step <= iterations; ++step) {
-		if (step % 10 == 0) {
+		if (step % 20 == 0) {
+			gpt2.ZeroLoss(stream);
 			float val_loss = 0.0f;
 			val_loader.Reset();
 			for (int i = 0; i < val_num_batches; ++i) {
 				val_loader.NextBatch(inputs,targets);
-				gpt2.Forward(inputs,targets);
-				val_loss += gpt2.mean_loss.value();
+				gpt2.Forward(inputs,targets,stream);
 			}
-			val_loss /= val_num_batches;
+			
+			val_loss = gpt2.GetLoss(stream) / val_num_batches;
 			INFO_PRINTLN("val loss {}", val_loss);
+			gpt2.ZeroLoss(stream);
 		}
-		if (/*step > 0 &&*/ step % 20 == 0) {
+		if (step > 0 && step % 20 == 0) {
 			gen_tokens.assign(B*T,tokenizer.eot_token);
-			INFO_PRINTLN("Generating:\n---");
-			for (int t = 1; t < genT; ++t) {
-				gpt2.Forward(gen_tokens);
-				float coin = real_dist(shuffle_rng);
-				int next_token = gpt2.Sample(0,t-1,coin,gpt2cuda::GPT2::SampleMethod::Mult);
-
-				gen_tokens[t] = next_token;
-				if (tokenizer) {
-					auto rep = tokenizer.decode(next_token);
-					SafePrint(rep);
-				} else {
-					INFO_PRINT("{}", next_token);
-				}
-				std::fflush(stdout);
-			}
-			INFO_PRINTLN("");
+			gpt2.ZeroLoss(stream);
+			GenerateText(gen_tokens, tokenizer, gpt2, genT, B, T, shuffle_rng, stream);
+			gpt2.ZeroLoss(stream);
 		}
-		auto start = std::chrono::steady_clock::now();
+
+		gpt2.ZeroLoss(stream);
+		
+		GPU_Clock timer;
+		GPU_Clock timer_forward;
+		GPU_Clock timer_backward;
+		GPU_Clock timer_update;
+		timer.start();
+		
 		if(next_batch){
 			train_loader.NextBatch(inputs,targets);
 		}
 		if(one_batch){
 			next_batch = false;
 		}
-		auto start_f = std::chrono::steady_clock::now();
-		gpt2.Forward(inputs,targets);
-		auto end_f = std::chrono::steady_clock::now();
-		gpt2.ZeroGrad();
-		auto start_b = std::chrono::steady_clock::now();
-		gpt2.Backward();
-		auto end_b = std::chrono::steady_clock::now();
-		auto start_u = std::chrono::steady_clock::now();
-		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
-		auto end_u = std::chrono::steady_clock::now();
-		auto end = std::chrono::steady_clock::now();
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-		auto duration_f = std::chrono::duration_cast<std::chrono::milliseconds>(end_f - start_f);
-		auto duration_b = std::chrono::duration_cast<std::chrono::milliseconds>(end_b - start_b);
-		auto duration_u = std::chrono::duration_cast<std::chrono::milliseconds>(end_u - start_u);
-		INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms , update duration:{}ms", step, gpt2.mean_loss.value(), duration.count(), duration_f.count(), duration_b.count(),duration_u.count());
+
+		timer_forward.start();
+		gpt2.Forward(inputs,targets,stream);
+		duration_f += timer_forward.milliseconds();
+
+		gpt2.ZeroGrad(stream);
+
+		timer_backward.start();
+		gpt2.Backward(stream);
+		duration_b += timer_backward.milliseconds();
+
+		timer_update.start();
+		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1,stream);
+		duration_u += timer_update.milliseconds();
+
+		duration += timer.milliseconds();
+		
+		
+		if(step > 0 && step % log_iterations == 0){
+			duration/= log_iterations;
+			duration_f/= log_iterations;
+			duration_b/= log_iterations;
+			duration_u/= log_iterations;
+			float mean_loss = gpt2.GetLoss(stream) ;
+
+			INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms, forward duration:{}ms, backward duration:{}ms , update duration:{}ms", step, mean_loss, duration, duration_f, duration_b,duration_u);
+
+			duration = 0;
+			duration_f = 0;
+			duration_b = 0;
+			duration_u = 0;
+		}
 	}
+	CUDA_CHECK(cudaStreamDestroy(stream));
 
 	return 0;
 }

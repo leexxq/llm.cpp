@@ -77,51 +77,33 @@ namespace gpt2cuda {
     //     }
     // }
 
-    inline PinVecf makePinVecfConstant(std::initializer_list<std::size_t> args,const size_t x){
-        int res = 1;
-        for(auto& x : args){
-            res *= x;
 
-        }
-        return PinVecf(res,x);
+    template<class T>
+    inline auto makePinVecConstant(size_t n,const T x){
+        return PinVec<T>(n,x);
     }
 
-    inline PinVecf makePinVecfZero(std::initializer_list<std::size_t> args){
-        return makePinVecfConstant(args,0);
+    template<class T>
+    inline auto makePinVecZero(std::size_t n){
+        return makePinVecConstant<T>(n,0);
     }
 
-    inline PinVecf makePinVecf(std::initializer_list<std::size_t> args){
-        int res = 1;
-        for(auto& x : args){
-            res *= x;
-
-        }
-        return PinVecf(res);
+    template<class T>
+    inline auto makePinVec(std::size_t n){
+        return PinVec<T>(n);
     }
 
-    template<class T,class V>
-    inline PinVec<T> makePinVecConstant(std::initializer_list<V> args,const T x){
-        int res = 1;
-        for(auto& x : args){
-            res *= x;
 
-        }
-        return PinVec<T>(res,x);
+    inline auto makePinVecfConstant(size_t n,const float x){
+        return makePinVecConstant<float>(n,x);
     }
 
-    template<class T,class V>
-    inline PinVec<T> makePinVecZero(std::initializer_list<V> args){
-        return makePinVecConstant<T>(args,0);
+    inline auto makePinVecfZero(std::size_t n){
+        return makePinVecfConstant(n,0);
     }
 
-    template<class T,class V>
-    inline PinVec<T> makePinVec(std::initializer_list<V> args){
-        int res = 1;
-        for(auto& x : args){
-            res *= x;
-
-        }
-        return PinVec<T>(res);
+    inline auto makePinVecf(size_t n){
+        return makePinVec<float>(n);
     }
 }
 

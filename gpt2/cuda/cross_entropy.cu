@@ -27,19 +27,19 @@ namespace kernel {
 
         const int idx = threadIdx.x + blockDim.x * blockIdx.x;
         if(idx < length){
-            losses[idx] = -log(inputs[idx * stride + targets[idx]]);
+            losses[idx] += -log(inputs[idx * stride + targets[idx]]);
         }
     }
 
     template<int threads=256>
-    void CrossEntropySoftmaxBackwardCUDA(float * d_logits, float const * probs,int const * targets,int ld , int length,int stride ,float scale){
-        CrossEntropySoftmaxBackwardKernel<<<(length + threads - 1 )/ threads,threads>>>(d_logits, probs, targets, ld,length,stride , scale);
+    void CrossEntropySoftmaxBackwardCUDA(float * d_logits, float const * probs,int const * targets,int ld , int length,int stride ,float scale, cudaStream_t stream = 0){
+        CrossEntropySoftmaxBackwardKernel<<<(length + threads - 1 )/ threads,threads,0,stream>>>(d_logits, probs, targets, ld,length,stride , scale);
         CUDA_CHECK_LAST();
     }
 
     template<int threads=256>
-    void CrossEntropyForwardCUDA(float* losses ,  float const * inputs, int const * targets,int length,int stride){
-        CrossEntropyForwardKernel<<<(length + threads - 1 )/ threads,threads>>>(losses,inputs ,targets, length,stride);
+    void CrossEntropyForwardCUDA(float* losses ,  float const * inputs, int const * targets,int length,int stride,cudaStream_t stream = 0){
+        CrossEntropyForwardKernel<<<(length + threads - 1 )/ threads,threads,0,stream>>>(losses,inputs ,targets, length,stride);
         CUDA_CHECK_LAST();
     }
 }
@@ -75,5 +75,14 @@ namespace kernel {
 
     }
 
+
+    void BatchCrossEntropySoftmaxBackward(DevVecf& d_logits, const DevVecf& probs,const DevVeci& targets,int B,int T,int V,int Vp,float scale,cudaStream_t stream){
+        
+        kernel::CrossEntropySoftmaxBackwardCUDA(d_logits.data(), probs.data(), targets.data(), Vp,B*T*V,V,scale,stream);
+    }
+
+    void BatchCrossEntropyForward(DevVecf& losses, const DevVecf& inputs, const DevVeci& targets,int B,int T,int Vp,cudaStream_t stream){
+        kernel::CrossEntropyForwardCUDA(losses.data(), inputs.data(), targets.data(), B*T, Vp,stream);
+    }
 
 }
