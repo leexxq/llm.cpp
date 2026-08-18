@@ -101,6 +101,15 @@ if(ENABLE_CUDA)
 	aux_source_directory(gpt2/cuda GPT2_CUDA_SOURCES)
 	add_library(gpt2cuda STATIC ${GPT2_CUDA_SOURCES} )
 
+	FetchContent_Declare(
+		nvtx
+		GIT_REPOSITORY https://github.com/NVIDIA/NVTX.git
+		GIT_TAG v3.5.0
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_MakeAvailable(nvtx)
+
+
 	target_include_directories(gpt2cuda PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/include
 		${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cutlass/tools/util/include
@@ -115,7 +124,7 @@ if(ENABLE_CUDA)
         )
     endif()
 
-	target_link_libraries(gpt2cuda PUBLIC CUDA::cudart PUBLIC fmt::fmt)
+	target_link_libraries(gpt2cuda PUBLIC CUDA::cudart PUBLIC fmt::fmt PUBLIC nvtx3-cpp)
 
 	target_compile_options(gpt2cuda PRIVATE
 		$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>

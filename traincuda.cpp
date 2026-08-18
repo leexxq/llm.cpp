@@ -6,6 +6,8 @@
 #include "utils/tokenizer.h"
 #include "gpt2/log.h"
 #include "cuda/gpu_clocker.cuh"
+#include <cuda_runtime.h>
+#include <nvtx3/nvtx3.hpp> // 1. 引入 NVTX3 头文件
 
 #include <cassert>
 #include <chrono>
@@ -196,6 +198,13 @@ int main(int argc, char **argv) {
 	
     auto start = std::chrono::high_resolution_clock::now();	
     auto end = std::chrono::high_resolution_clock::now();	
+
+	static const nvtx3::registered_string tag_fwd{"forward"};
+	static const nvtx3::registered_string tag_bwd{"backward"};
+	static const nvtx3::registered_string tag_update{"update"};
+	static const nvtx3::registered_string tag_0loss{"zero loss"};
+	static const nvtx3::registered_string tag_0grad{"zero grad"};
+
 	for (int step = 0; step < args.iterations; ++step) {
 
 		
@@ -216,15 +225,31 @@ int main(int argc, char **argv) {
 		}
 		
 
+
+		{
+		nvtx3::scoped_range nvtx{tag_0loss};
 		gpt2.ZeroLoss(cur_stream);
+		}
 
+		{
+		nvtx3::scoped_range nvtx{tag_fwd};
 		gpt2.Forward(cur_stream);
+		}
 
+		{
+		nvtx3::scoped_range nvtx{tag_0grad};
 		gpt2.ZeroGrad(cur_stream);
+		}
 
+		{
+		nvtx3::scoped_range nvtx{tag_bwd};
 		gpt2.Backward(cur_stream);
+		}
 
+		{
+		nvtx3::scoped_range nvtx{tag_update};
 		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1,cur_stream);
+		}
 
 
 		if(!args.one_batch){
