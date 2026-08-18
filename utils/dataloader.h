@@ -62,9 +62,32 @@ public:
 			unsigned int num_processes,
 			bool should_shuffle);
 	~DataLoader() {}
+	template<class InputIterator,class OutputIterator>
+	void LoadBatch(InputIterator input,OutputIterator target){
+		ReadTokenfileToBuffer();
+		size_t B = B_;
+		size_t T = T_;
+		// decode the buffer into inputs and targets (cast to int)
+		for (int i = 0; i < B * T; ++i) {
+			*input = static_cast<int>(buffer_[i]);
+			*target = static_cast<int>(buffer_[i + 1]);
+			++input;
+			++target;
+		}
 
-	void LoadBatch(StdVec<int>& inputs,StdVec<int>& targets);
+	}
+	template<class InputIterator,class OutputIterator>
+	void NextBatch(InputIterator input,OutputIterator target){
+		if (current_sample_idx_ >= shard_num_samples_) {
+			Advance();
+		}
+
+		LoadBatch(input,target);
+		++current_sample_idx_;
+	}
+
 	void NextBatch(StdVec<int>& inputs,StdVec<int>& targets);
+
 	void Resume(size_t shard_idx, size_t sample_idx);
 	void Reset();
 };

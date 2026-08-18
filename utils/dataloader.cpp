@@ -10,6 +10,7 @@
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <stdexcept>
 
 DataLoader::DataLoader(const fs::path &shards_dir, size_t B, size_t T,
 		unsigned int process_rank,
@@ -124,13 +125,15 @@ int64_t DataLoader::LoadShard(int shard_index) {
 // }
 
 void DataLoader::NextBatch(StdVec<int>& inputs,StdVec<int>& targets) {
-	if (current_sample_idx_ >= shard_num_samples_) {
-		Advance();
-	}
 
-	LoadBatch(inputs,targets);
-	++current_sample_idx_;
+	if(inputs.size() != B_*T_){
+		throw std::invalid_argument("inputs size mismatch");
+	}else if(targets.size() != B_*T_){
+		throw std::invalid_argument("outputs size mismatch");
+	}
+	NextBatch(inputs.begin(),targets.begin());
 }
+
 
 
 void DataLoader::ReadTokenfileToBuffer(){
@@ -145,25 +148,6 @@ void DataLoader::ReadTokenfileToBuffer(){
 	tokens_file_.read(reinterpret_cast<char *>(buffer_.data()), buffer_.size() * sizeof(uint16_t));
 }
 
-void DataLoader::LoadBatch(StdVec<int>& inputs,StdVec<int>& targets) {
-	ReadTokenfileToBuffer();
-	size_t B = B_;
-	size_t T = T_;
-	assert(B*T == inputs.size());
-	// decode the buffer into inputs and targets (cast to int)
-	for (int b = 0; b < B; ++b) {
-		for (int t = 0; t < T; ++t) {
-			int i = t + b * T;
-			inputs[i] = static_cast<int>(buffer_[i]);
-			targets[i] = static_cast<int>(buffer_[i + 1]);
-		}
-	}
-	if (B > 1 && T > 1) {
-		//map to eigen
-		// DEBUG_PRINTLN("inputs: \n{}...", fmt::streamed(inputs.block<2, 2>(0, 0)));
-		// DEBUG_PRINTLN("targets: \n{}...", fmt::streamed(targets.block<2, 2>(0, 0)));
-	}
-}
 
 
 // void DataLoader::LoadBatch( Mati& inputs,  Mati& targets) {
