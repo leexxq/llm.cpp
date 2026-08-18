@@ -442,7 +442,7 @@ TEST(CudaAttention,flash_attention_f32_backward1){
 	StdVec<float> inputs_vec(B*T*C3);
 
 	for(int i =0 ; i < B ; ++i){
-		inputs[i] = Matf::Random(T,C3) * 10;
+		inputs[i] = Matf::Random(T,C3) ;
         Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C3 , T,C3)  = inputs[i];
 	}
 

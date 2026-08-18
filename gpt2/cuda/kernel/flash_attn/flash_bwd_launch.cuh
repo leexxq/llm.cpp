@@ -20,7 +20,7 @@ namespace kernel {
 		using LayoutdV = LQKV;
 	};
     template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
-    void AttentionBackwardCUDA(float *d_inputs, float const *d_outputs, float const* outputs , float const *inputs,float const* logsumexp, int B, int T, int C3, int NH,cudaStream_t stream) {
+    void AttentionBackwardCUDA(float *d_inputs, float * D , float const *d_outputs, float const* outputs , float const *inputs,float const* logsumexp, int B, int T, int C3, int NH,cudaStream_t stream) {
 
         assert(C3 % 3 == 0);
         int C = C3 / 3;
@@ -32,9 +32,6 @@ namespace kernel {
         assert(T % Bc == 0);
         CUTE_STATIC_ASSERT_V(bool_constant<Hc == 32 || Hc == 64>(),"Hc is not supported");
 
-
-        float * D;
-        CUDA_CHECK(cudaMallocAsync(&D,sizeof(float) * B*NH*T,stream));
 
         auto L_Q= make_layout(make_shape(int{B}, int{NH}, int{T},Int<Hc>{}), make_stride(int{T} * int{C3}, Int<Hc>{}, int{C3}, Int<1>{}));
         
@@ -101,7 +98,6 @@ namespace kernel {
                                     dK,L_K,
                                     dV,L_V);
         CUDA_CHECK_LAST();
-        CUDA_CHECK(cudaFreeAsync(D,stream));
     }
 }
 }

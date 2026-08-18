@@ -128,6 +128,7 @@ namespace gpt2cuda{
 
         dl_atty =gpt2cuda::makeDevVecfZero(B* T* C);
         params_bytes_ += dl_atty.size() * sizeof(float);
+        att_D = gpt2cuda::makeDevVecf(B*NH*T);
 
 
         dl_qkv =gpt2cuda::makeDevVecfZero(B* T* 3 * C);
@@ -232,7 +233,7 @@ namespace gpt2cuda{
 
 
         quick_debug_print(dl_qkv);
-        BatchCausalAttentionBackward(dl_qkv,dl_atty,l_atty_,l_qkv_,l_logsumexp_,B_,T_,3*C_,NH_,stream);
+        BatchCausalAttentionBackward(dl_qkv,att_D,dl_atty,l_atty_,l_qkv_,l_logsumexp_,B_,T_,3*C_,NH_,stream);
         // quick_debug_print(dl_qkv);
         // quick_debug_print(dl_atty);
         // quick_debug_print(l_atty_);

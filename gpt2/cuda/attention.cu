@@ -61,6 +61,7 @@ namespace gpt2cuda{
 		auto outputs_d = DAlloc(B*T*C);
 		auto inputs_d = DAlloc(B*T*C3);
 		auto logsumexp_d = DAlloc(B*NH*T);
+		auto att_D = DAlloc(B*NH*T);
 
 		d_outputs_d.copy_from_host(d_outputs);
 		outputs_d.copy_from_host(outputs);
@@ -71,18 +72,18 @@ namespace gpt2cuda{
 
 		if(C/NH == 32){
 			if(Attention == AttentionType::Default){
-				kernel::AttentionBackwardCUDA<AttentionType::Default,32>(d_inputs_d.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
+				kernel::AttentionBackwardCUDA<AttentionType::Default,32>(d_inputs_d.get(),att_D.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
 			}else if(Attention == AttentionType::Causal){
-				kernel::AttentionBackwardCUDA<AttentionType::Causal,32>(d_inputs_d.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
+				kernel::AttentionBackwardCUDA<AttentionType::Causal,32>(d_inputs_d.get(),att_D.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
 			}else{
 				std::cerr << "fatal: " << static_cast<int>(Attention) << " not exists!"<< std::endl;
 				exit(1);
 			}
 		}else if(C/NH == 64){
 			if(Attention == AttentionType::Default){
-				kernel::AttentionBackwardCUDA<AttentionType::Default,64>(d_inputs_d.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
+				kernel::AttentionBackwardCUDA<AttentionType::Default,64>(d_inputs_d.get(),att_D.get(),d_outputs_d.get(),outputs_d.get(),inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
 			}else if(Attention == AttentionType::Causal){
-				kernel::AttentionBackwardCUDA<AttentionType::Causal,64>(d_inputs_d.get(),d_outputs_d.get(),outputs_d.get(), inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
+				kernel::AttentionBackwardCUDA<AttentionType::Causal,64>(d_inputs_d.get(),att_D.get(),d_outputs_d.get(),outputs_d.get(), inputs_d.get(),logsumexp_d.get(),B,T,C3,NH,stream);
 			}else{
 				std::cerr << "fatal: " << static_cast<int>(Attention) << " not exists!"<< std::endl;
 				exit(1);
@@ -131,14 +132,14 @@ namespace gpt2cuda{
 
 
 	}
-    void BatchCausalAttentionBackward(DevVecf& d_inputs,const DevVecf& d_outputs, const DevVecf& outputs, const DevVecf& inputs,const DevVecf& logsumexp ,int B, int T, int C3, int NH,cudaStream_t stream){
+    void BatchCausalAttentionBackward(DevVecf& d_inputs,DevVecf& att_D , const DevVecf& d_outputs, const DevVecf& outputs, const DevVecf& inputs,const DevVecf& logsumexp ,int B, int T, int C3, int NH,cudaStream_t stream){
 		using namespace cute;
 		assert(C3 % 3 == 0);
 		auto C = C3 / 3;
 		if(C/NH == 32){
-			kernel::AttentionBackwardCUDA<AttentionType::Causal,32>(d_inputs.data(),d_outputs.data(),outputs.data(),inputs.data(),logsumexp.data(),B,T,C3,NH,stream);
+			kernel::AttentionBackwardCUDA<AttentionType::Causal,32>(d_inputs.data(),att_D.data(),d_outputs.data(),outputs.data(),inputs.data(),logsumexp.data(),B,T,C3,NH,stream);
 		}else if(C/NH == 64){
-			kernel::AttentionBackwardCUDA<AttentionType::Causal,64>(d_inputs.data(),d_outputs.data(),outputs.data(),inputs.data(),logsumexp.data(),B,T,C3,NH,stream);
+			kernel::AttentionBackwardCUDA<AttentionType::Causal,64>(d_inputs.data(),att_D.data(),d_outputs.data(),outputs.data(),inputs.data(),logsumexp.data(),B,T,C3,NH,stream);
 		}else
 		{
 			std::cerr << "not supported attention shape D = " << C/NH << std::endl;

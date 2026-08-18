@@ -8,5 +8,5 @@ namespace gpt2cuda {
 
 
     void BatchCausalAttentionForward(DevVecf& outputs,DevVecf& logsumexp  , const DevVecf& inputs,int B,int T ,int C3,int NH,cudaStream_t stream);
-    void BatchCausalAttentionBackward(DevVecf& d_inputs,const DevVecf& d_outputs, const DevVecf& outputs, const DevVecf& inputs,const DevVecf& logsumexp ,int B, int T, int C3, int NH,cudaStream_t stream);
+    void BatchCausalAttentionBackward(DevVecf& d_inputs,DevVecf& att_D , const DevVecf& d_outputs, const DevVecf& outputs, const DevVecf& inputs,const DevVecf& logsumexp ,int B, int T, int C3, int NH,cudaStream_t stream);
 }

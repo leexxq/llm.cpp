@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <random>
+#include <ratio>
 #include <string>
 using namespace gpt2cuda;
 
@@ -187,15 +188,14 @@ int main(int argc, char **argv) {
 	auto stream2 = gpt2.CreateStream();
 
 
-	float duration = 0;
 
 	train_loader.NextBatch(inputs.begin(),targets.begin());
 	gpt2.SetTrainData(stream1,inputs, targets);
-	GPUClock timer;
-	// GPUClock timer_forward;
-	// GPUClock timer_backward;
-	// GPUClock timer_update;
+	// GPUClock timer;
 	
+	
+    auto start = std::chrono::high_resolution_clock::now();	
+    auto end = std::chrono::high_resolution_clock::now();	
 	for (int step = 0; step < args.iterations; ++step) {
 
 		
@@ -215,23 +215,16 @@ int main(int argc, char **argv) {
 			INFO_PRINTLN("val loss {}", val_loss);
 		}
 		
-		timer.start(cur_stream.GetStream());
 
 		gpt2.ZeroLoss(cur_stream);
 
-		// timer_forward.start(cur_stream.GetStream());
 		gpt2.Forward(cur_stream);
-		// duration_f += timer_forward.milliseconds();
 
 		gpt2.ZeroGrad(cur_stream);
 
-		// timer_backward.start(cur_stream.GetStream());
 		gpt2.Backward(cur_stream);
-		// duration_b += timer_backward.milliseconds();
 
-		// timer_update.start(cur_stream.GetStream());
 		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1,cur_stream);
-		// duration_u += timer_update.milliseconds();
 
 
 		if(!args.one_batch){
@@ -240,15 +233,14 @@ int main(int argc, char **argv) {
 
 		gpt2.SetTrainData(next_stream,inputs, targets);
 		
-		duration += timer.milliseconds();
 		if((step + 1) % args.log_iterations == 0 ){
-			duration/= args.log_iterations;
-
+			end = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double,std::milli> elapsed = end -start;
+			float duration = elapsed.count();
 			float mean_loss = gpt2.GetLossSync(cur_stream) ;
-
 			INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms", step + 1, mean_loss, duration);
+			start = std::chrono::high_resolution_clock::now();
 
-			duration = 0;
 		}
 		
 		if (args.enable_gen&&(step+1) % args.gen_iterations == 0) {
@@ -257,7 +249,6 @@ int main(int argc, char **argv) {
 			gpt2.SetTrainData(cur_stream,gen_tokens);
 			GenerateText(gen_tokens, tokenizer, gpt2, args.genT, args.B, args.T, shuffle_rng, cur_stream);
 			cur_stream.SetOnlyRefer(false);
-
 		}
 	}
 

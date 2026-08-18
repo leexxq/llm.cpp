@@ -6,10 +6,6 @@ namespace gpt2cuda{
         // 3C is GPT2's dim before qkv split
 
     private:
-
-
-
-
         DevVecf l_fcproj_;      //(B,T,C)
 
 
@@ -43,7 +39,6 @@ namespace gpt2cuda{
 
 
     public:
-
 
 
         DevVecf l_fcproj_weight ; //(C,4C)
@@ -88,7 +83,7 @@ namespace gpt2cuda{
         DevVecf dl_attproj_bias;       //(C)
 
         DevVecf dl_atty;                //(B,T,C)
-        DevVecf dl_logsumexp;           //(B,NH,T)
+        DevVecf att_D; //(B,T)
 
         DevVecf dl_qkv;                 //(B,T,3C)
         DevVecf dl_qkv_weight;    //(3C,C)
