@@ -1,3 +1,4 @@
+#include "cuda/devvector.cuh"
 #include "cuda/pinvector.cuh"
 #include "cuda/softmax.cuh"
 #include "layernorm.cuh"
@@ -166,10 +167,6 @@ void GPT2::Init(size_t B,size_t T){
     config_.Print();
 
     params_bytes_ = 0;
-    inputs_ = makeDevVeci(B*T);
-    targets_ = makeDevVeci(B*T);
-    params_bytes_ += inputs_.size() * sizeof(int);
-    params_bytes_ += targets_.size() * sizeof(int);
     mean_loss = 0.f;
 
 
@@ -299,23 +296,17 @@ void GPT2::Init(size_t B,size_t T){
         
 	}
 
+
 }
-
-void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets,cudaStream_t stream){
-    assert(B_ * T_ == inputs.size());
-    this->inputs_ = inputs;
-    if(!targets.empty()){
-        assert(B_ * T_ == targets.size());
-        this->targets_ = targets;
-    }
-    
-
+void GPT2::Forward(Stream& s){
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
 
+    auto stream = s.GetStream();
+    auto& inputs = s.inputs;
 
-    BatchEncoderForward(encoded_, inputs_,wte_,wpe_,B,T,C,Vp,MaxT,stream);
+    BatchEncoderForward(encoded_, inputs,wte_,wpe_,B,T,C,Vp,MaxT,stream);
 
     layers_.front().Forward(residual_.front(),encoded_,stream);
 
@@ -329,14 +320,39 @@ void GPT2::Forward(const StdVeci &inputs, const StdVeci &targets,cudaStream_t st
 
     BatchSoftmaxForward(probs_, logits_, B, T, V,Vp,stream);
 
-    if(targets_.size() > 0 ) {
-        BatchCrossEntropyForward(losses,probs_,targets_,B,T,Vp,stream);
+    if(!s.is_only_refer) {
+        BatchCrossEntropyForward(losses,probs_,s.targets,B,T,Vp,stream);
     }else {
         mean_loss = -1.f;
     }
 }
 
-float GPT2::GetLoss(cudaStream_t stream){
+
+
+
+
+void GPT2::SetTrainData(Stream& s,const PinVeci& inputs, const PinVeci& targets){
+    auto stream = s.GetStream();
+    if(inputs.size() != B_*T_){
+        throw std::invalid_argument("invalid inputs size");
+    }
+    s.inputs.from(inputs.data(),stream);
+    if(s.is_only_refer){
+        if(targets.size() > 0){
+            throw std::runtime_error("try set target to a only refer stream");
+        }
+    }else{
+        if(targets.size() != B_*T_){
+            throw std::invalid_argument("invalid targets size");
+        }
+        s.targets.from(targets.data(),stream);
+    }
+    
+}
+
+
+float GPT2::GetLossSync(const Stream& s){
+    auto stream = s.GetStream();
     if(mean_loss < 0.f){
         throw std::runtime_error("mean_loss is not computed yet. Call Forward() with targets first.");
     }else{
@@ -349,7 +365,8 @@ float GPT2::GetLoss(cudaStream_t stream){
 }
 
 
-void GPT2::ZeroLoss(cudaStream_t stream){
+void GPT2::ZeroLoss(Stream& s){
+    auto stream = s.GetStream();
     losses.zero(stream);
     mean_loss = 0.f;
 }
@@ -370,14 +387,17 @@ void GPT2::ZeroLoss(cudaStream_t stream){
 #define quick_debug_print(v,stream)
 
 
-void GPT2::Backward(cudaStream_t stream){
+void GPT2::Backward(Stream& s){
 
+    auto stream = s.GetStream();
+    auto& inputs = s.inputs;
+    auto& targets = s.targets;
 
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
 
-    BatchCrossEntropySoftmaxBackward(dlogits_, probs_, targets_,B,T,V,Vp,1.f/(B*T),stream);
+    BatchCrossEntropySoftmaxBackward(dlogits_, probs_, targets,B,T,V,Vp,1.f/(B*T),stream);
     
 
     DevVecf dummy;
@@ -392,16 +412,16 @@ void GPT2::Backward(cudaStream_t stream){
     layers_.front().Backward(dencoded_ ,dresidual3_.front(), encoded_,stream);
     quick_debug_print(dencoded_,stream);
 
-    BatchEncoderBackward(dwte_,dwpe_,dencoded_,inputs_,B,T,C,Vp,MaxT,stream);
+    BatchEncoderBackward(dwte_,dwpe_,dencoded_,inputs,B,T,C,Vp,MaxT,stream);
     quick_debug_print(dwte_,stream);
 
     
     
 }
 
+void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t,Stream& s) {
 
-void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, int t,cudaStream_t stream) {
-
+    auto stream = s.GetStream();
 	size_t params_size = params_memory_.size();
 
 	AdamWConfig adamw_params{
@@ -492,7 +512,8 @@ void ZeroGrad(Layer& l,cudaStream_t stream){
         SetZero(l.dl_ln1_beta,stream);     
 }
 
-void GPT2::ZeroGrad(cudaStream_t stream){
+void GPT2::ZeroGrad(Stream& s){
+    auto stream = s.GetStream();
     SetZero(dlogits_,stream);
     SetZero(dlnf_,stream);
     SetZero(dresidual3_,stream);

@@ -70,6 +70,9 @@ namespace gpt2cuda {
         size_t size() const noexcept{
             return data_.size();
         }
+        bool empty() const noexcept{
+            return size() == 0;
+        }
 
         void zero(){
             CUDA_CHECK(cudaMemset(data(), 0, size()*sizeof(T)));
@@ -85,7 +88,18 @@ namespace gpt2cuda {
         
         template<class Allocator>
         void to(std::vector<T,Allocator>& other,cudaStream_t stream){
-            CUDA_CHECK(cudaMemcpyAsync(const_cast<T*>(other.data()),data(),size()*sizeof(T),cudaMemcpyDeviceToHost,stream));
+            to(other.data(),stream);
+        }
+
+        void to(T* dst_data,cudaStream_t stream = 0){
+            CUDA_CHECK(cudaMemcpyAsync(dst_data,this->data(),size()*sizeof(T),cudaMemcpyDeviceToHost,stream));
+        }
+        void from(const T* src_data,cudaStream_t stream = 0){
+            CUDA_CHECK(cudaMemcpyAsync(this->data(),src_data,size()*sizeof(T),cudaMemcpyHostToDevice,stream));
+        }
+
+        void from(const DevVector<T>& other,cudaStream_t stream = 0){
+            CUDA_CHECK(cudaMemcpyAsync(this->data(),other.data(),size()*sizeof(T),cudaMemcpyDeviceToDevice,stream));
         }
     };
 
