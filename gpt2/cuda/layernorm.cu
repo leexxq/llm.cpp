@@ -113,7 +113,7 @@ namespace kernel {
 
 
     //used for compute d_gamma , d_beta and \hat{x}_{ij}
-    __global__ void GammaAndBetaDerivateKernel(float * d_gamma, float * d_beta, float const * d_outputs, float  * hat_inputs,int B, int T, int C){
+    __global__ void GammaAndBetaDerivateKernel(float * d_gamma, float * d_beta, float const * d_outputs, float const * inputs,float const* means , float const * rstds , int B, int T, int C){
         const int length = B*T*C;
         const int stride = C;
 
@@ -136,7 +136,8 @@ namespace kernel {
             float d_beta_i = 0,d_gamma_i=0;
             if(thread_offest < length){
                 d_beta_i = d_outputs[thread_offest];
-                d_gamma_i = d_outputs[thread_offest] * hat_inputs[thread_offest];
+                float input_hat_i = (inputs[thread_offest] - means[thread_offest / stride]) * rstds[thread_offest / stride];
+                d_gamma_i = d_outputs[thread_offest] * input_hat_i; 
             }
             for(int offest = warpSize / 2 ; offest > 0 ; offest/=2){
                 d_beta_i += __shfl_down_sync(mask,d_beta_i,offest);
@@ -150,28 +151,8 @@ namespace kernel {
     }
 
 
-    // __global__ void DerivativeLayerNorm1DKernel(float * d_inputs , float * d_gamma, float * d_beta, float const * d_outputs, float  * inputs, float const * gamma, float const * beta, float const * means, float const * rstds, int B, int T, int C){
-
-
-    // }
-
-    __global__ void ComputeHatInputsKernel(float* outputs , float const *inputs,float const*means,float const* rstds,int B,int T,int C){
-
-        const int bidx = blockIdx.x;
-        const int tidx = threadIdx.x; 
-        const int idx = tidx + bidx * blockDim.x;
-
-        if(idx < B*T*C){
-            outputs[idx] = (inputs[idx] - means[idx / C]) *rstds[idx / C];
-        }
-
-    }
-
-
-
-
     template<int K>
-    __launch_bounds__(256) __global__ void ComputeDerivateInputsKernel(float* d_inputs,float const * d_outputs, float const* inputs,float const* gamma,float const * rstds,int B,int T,int C){
+    __launch_bounds__(256) __global__ void ComputeDerivateInputsKernel(float* d_inputs,float const * d_outputs, float const* inputs,float const* gamma,float const* means ,float const * rstds,int B,int T,int C){
 
         //used stored d_outputs
         extern __shared__ float s_data[];
@@ -185,6 +166,9 @@ namespace kernel {
         const int wave = C / threads;
         const u_int32_t mask = 0xFFFFFFFFU;
 
+        auto hat_func = [inputs,means,rstds](int row ,int col ,int cols){
+            return (inputs[row * cols + col] - means[row]) * rstds[row];
+        };
         // used for reduction 
         static __shared__ float shared[64];
         #pragma unroll 1
@@ -199,7 +183,7 @@ namespace kernel {
                 const int tid_off = tidx + i * threads;
                 float val = gamma[tid_off]  * d_outputs[row*C + tid_off];
                 term2 += val;
-                term3 += inputs[row*C + tid_off] * val;
+                term3 += hat_func(row,tid_off,C) * val;
                 s_data[tid_off] = val;
             }
             bool residual_pred = (tidx + wave * threads) < C; 
@@ -207,7 +191,7 @@ namespace kernel {
                 const int tid_off = tidx + wave * threads;
                 float val = gamma[tid_off]  * d_outputs[row*C + tid_off];
                 term2 += val;
-                term3 += inputs[row*C + tid_off] * val;
+                term3 += hat_func(row,tid_off,C)* val;
                 s_data[tid_off] = val;
             }
             
@@ -257,16 +241,15 @@ namespace kernel {
 
             for (int i =0 ; i< wave ; ++i){
                 const int tid_off = tidx + i * threads;
-                d_inputs[row * C + tid_off] += rstds[row] * (s_data[tid_off] - term2 - term3 * inputs[row * C + tid_off]);
+                d_inputs[row * C + tid_off] += rstds[row] * (s_data[tid_off] - term2 - term3 * hat_func(row,tid_off,C));
             }
 
             residual_pred = (tidx + wave * threads) < C; 
 
             if(residual_pred){
                 const int tid_off = tidx + wave * threads;
-                d_inputs[row * C + tid_off] += rstds[row] * (s_data[tid_off] - term2 - term3 * inputs[row * C + tid_off]);
+                d_inputs[row * C + tid_off] += rstds[row] * (s_data[tid_off] - term2 - term3 * hat_func(row,tid_off,C));
             }
-
         }
 
     }
@@ -277,14 +260,7 @@ namespace kernel {
 
         
 
-        float * inputs_hat;
-        CUDA_CHECK(cudaMallocAsync(&inputs_hat,sizeof(float) * B*T*C,stream));
         assert(C!=0);
-        //convert inputs to  \hat{x}_{ij}
-        ComputeHatInputsKernel<<<(B*T*C + threads - 1)/ threads,threads,0,stream>>>(inputs_hat,inputs,means,rstds, B,T,C);
-        CUDA_CHECK_LAST();
-
-        // CUDA_CHECK(cudaDeviceSynchronize());
 
         //compute d_gamma and d_beta
         constexpr int warp_threads = 32;
@@ -293,16 +269,15 @@ namespace kernel {
         // constexpr int threads = warp_threads * warp_count;
         int blocks = (C+ warp_count - 1)/ warp_count;
 
-        GammaAndBetaDerivateKernel<<<blocks,threads,0,stream>>>(d_gamma, d_beta, d_outputs, inputs_hat,B,T, C);
+        GammaAndBetaDerivateKernel<<<blocks,threads,0,stream>>>(d_gamma, d_beta, d_outputs, inputs,means,rstds,B,T, C);
         CUDA_CHECK_LAST();
 
         assert((B*T)% K == 0);
 
         //compute d_inputs
         //compute one row by blocks
-        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C,stream>>>(d_inputs, d_outputs , inputs_hat, gamma,rstds, B,T,C);
+        ComputeDerivateInputsKernel<K><<<(B*T + K - 1) / K,threads,sizeof(float) * C,stream>>>(d_inputs, d_outputs , inputs, gamma,means,rstds, B,T,C);
         CUDA_CHECK_LAST();
-        CUDA_CHECK(cudaFreeAsync(inputs_hat,stream));
     }
 
 }
