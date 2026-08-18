@@ -27,16 +27,16 @@ namespace gpt2cuda {
     }
 
     template<int threads=256>
-    void ResidualForwardCUDA(float* outputs , float const * inputs1 , float const * inputs2,int length){
+    void ResidualForwardCUDA(float* outputs , float const * inputs1 , float const * inputs2,int length,cudaStream_t stream = cudaStreamDefault){
         int blocks = (length + threads - 1)/ threads;
-        ResidualForwardKernel<<<blocks,threads>>>(outputs, inputs1, inputs2, length);
+        ResidualForwardKernel<<<blocks,threads,0,stream>>>(outputs, inputs1, inputs2, length);
         CUDA_CHECK_LAST();
     }
 
     template<int threads=256>
-    void ResidualBackwardCUDA(float* d_inputs1,float* d_inputs2,float const * d_outputs,int length){
+    void ResidualBackwardCUDA(float* d_inputs1,float* d_inputs2,float const * d_outputs,int length,cudaStream_t stream = cudaStreamDefault){
         int blocks = (length + threads - 1)/ threads;
-        ResidualBackwardKernel<<<blocks,threads>>>(d_inputs1,d_inputs2,d_outputs,length);
+        ResidualBackwardKernel<<<blocks,threads,0,stream>>>(d_inputs1,d_inputs2,d_outputs,length);
         CUDA_CHECK_LAST();
     }
 
@@ -72,11 +72,11 @@ namespace gpt2cuda {
     }
 
     void BatchResidualForward(DevVecf& outputs, const DevVecf& inputs1, const DevVecf& inputs2, size_t B, size_t T, size_t C, cudaStream_t stream){
-        kernel::ResidualForwardCUDA<>(outputs.data(), inputs1.data(), inputs2.data(),B*T*C);
+        kernel::ResidualForwardCUDA<>(outputs.data(), inputs1.data(), inputs2.data(),B*T*C,stream);
 
     }
     void BatchResidualBackward(DevVecf& d_inputs1, DevVecf& d_inputs2, const DevVecf& d_outputs, size_t B, size_t T, size_t C,cudaStream_t stream){
-        kernel::ResidualBackwardCUDA(d_inputs1.data(), d_inputs2.data(), d_outputs.data(),B*T*C);
+        kernel::ResidualBackwardCUDA(d_inputs1.data(), d_inputs2.data(), d_outputs.data(),B*T*C,stream);
 
     }
 

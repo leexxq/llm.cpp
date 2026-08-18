@@ -44,31 +44,8 @@ namespace kernel{
         }
 
 
-
-        // if(lane ==0){
-        //     printf("lane : %d, warpidx : %d , {%f,%f}\n",lane,warpidx,maxval,sum);
-        // }
-
-        
-        //warp level reduction
-
-        // constexpr uint32_t full_mask = 0xFFFFFFFFU;
-        // for(int offest = warpSize/2 ; offest > 0 ; offest/= 2){
-        //     sum += __shfl_down_sync(full_mask,sum,offest);
-        //     maxval = max(__shfl_down_sync(full_mask,sum,offest),maxval);
-        // }
-
-        // bool first_pred = (lane == 0);
-        // if(first_pred){
-        //     sum *= exp(-maxval);
-        // }
-        // //brodcast sum and maxval to warp other threads
-        // sum = __shfl_sync(full_mask,sum,0);
-        // maxval = __shfl_sync(full_mask,maxval,0);
-
-
         constexpr uint32_t full_mask = 0xFFFFFFFFU;
-        for(int offest = warpSize/2 ; offest > 0 ; offest/= 2){
+        for(int offest = warpSize/2 ; offest > 0 ; offest>>= 1){
             maxval = max(__shfl_xor_sync(full_mask,maxval,offest),maxval);
         }
 
@@ -84,7 +61,8 @@ namespace kernel{
             sum += expf(val - maxval);
         }
         
-        for(int offest = warpSize/2 ; offest > 0 ; offest/= 2){
+        
+        for(int offest = warpSize/2 ; offest > 0 ; offest >>= 1){
             sum += __shfl_xor_sync(full_mask,sum,offest);
         }
 

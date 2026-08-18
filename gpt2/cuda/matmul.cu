@@ -1,8 +1,10 @@
+#include "cute/arch/copy.hpp"
 #include "cutlass/util/device_memory.h"
 #include "matmul.cuh"
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include <cassert>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -51,7 +53,9 @@ namespace kernel{
         Tensor tsI = local_partition(sI_swz,G2SCpThrLayout{},threadIdx.x);
         Tensor tgI_first = local_partition(gI_first, G2SCpThrLayout{},threadIdx.x);
         
-        copy(tgI_first,tsI);
+        
+        copy(AutoCopyAsync{},tgI_first,tsI);
+        // copy(tgI_first,tsI);
         cp_async_fence();
 
 
@@ -87,7 +91,8 @@ namespace kernel{
                 if(k < Tr - 1){
                     Tensor gI = local_tile(I_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(k + 1,blockIdx.x));
                     Tensor tgI = local_partition(gI, G2SCpThrLayout{},threadIdx.x);
-                    copy(tgI,tsI);
+                    // copy(AutoCopyAsync{},tgI,tsI);
+                    copy(AutoCopyAsync{},tgI,tsI);
                     cp_async_fence();
                 }
             }
@@ -168,12 +173,12 @@ namespace kernel{
         // }
     }
     template <int Br = 64 , int Bc = 32>
-    void MatrixColSumCUDA(float* output , float const* input,int M, int N){
+    void MatrixColSumCUDA(float* output , float const* input,int M, int N,cudaStream_t stream = cudaStreamDefault){
         constexpr int threads = 128;
         assert(M > 0 && N % Bc == 0);
         assert(N > 0 && M % Br ==0);
 
-        kernel::MatrixColSumKernel<128,Br,Bc><<<cute::ceil_div(N, Bc), threads>>>(output, input, M, N);
+        kernel::MatrixColSumKernel<128,Br,Bc><<<cute::ceil_div(N, Bc), threads,0,stream>>>(output, input, M, N);
         CUDA_CHECK_LAST();
     }
 }
@@ -248,7 +253,7 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             B
         };
 
-        gemm(argument,stream);
+        gemm(argument,nullptr,stream);
     }else {
 
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
@@ -293,7 +298,7 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             B
         };
 
-        gemm(argument,stream);
+        gemm(argument,nullptr,stream);
     }
 }
 
@@ -367,7 +372,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             B
         };
 
-        auto status = gemm(argument,stream);
+        auto status = gemm(argument,nullptr,stream);
         if(status != cutlass::Status::kSuccess){
             std::cerr << cutlass::cutlassGetStatusString(status) << std::endl;
             exit(EXIT_FAILURE);
@@ -416,7 +421,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
                 C_m,
                 {1},
             };
-            auto status = gemm(argument);
+            auto status = gemm(argument,nullptr,stream);
 
             if(status != cutlass::Status::kSuccess){
                 std::cerr << cutlass::cutlassGetStatusString(status) << std::endl;
@@ -427,7 +432,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
     }
 
     if(d_bias_d != nullptr){
-        gpt2cuda::kernel::MatrixColSumCUDA(d_bias_d, d_outputs_d, B*T,Oc);
+        gpt2cuda::kernel::MatrixColSumCUDA(d_bias_d, d_outputs_d, B*T,Oc,stream);
     }
 }
 

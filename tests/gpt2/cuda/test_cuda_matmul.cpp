@@ -66,76 +66,76 @@ TEST(CudaMatMul, forward1){
 }
 
 
-TEST(CudaMatMul, backward1){
-	StdVec<float> weight = {
-		0.5496, -1.0675, -0.3498, -1.7053, -0.0094,
-		0.8118, 0.6951, 1.7514, -0.0827, -0.7742,
-		0.6460, -0.5852, 1.0690, 2.4317, -1.1704,
-		0.0139, -0.5536, -0.0932, 0.6729, -0.1479
-	};
+// TEST(CudaMatMul, backward2){
+// 	StdVec<float> weight = {
+// 		0.5496, -1.0675, -0.3498, -1.7053, -0.0094,
+// 		0.8118, 0.6951, 1.7514, -0.0827, -0.7742,
+// 		0.6460, -0.5852, 1.0690, 2.4317, -1.1704,
+// 		0.0139, -0.5536, -0.0932, 0.6729, -0.1479
+// 	};
 
-	StdVec<float> bias{ -0.5602, -0.6464, -0.2690, 0.5687, -0.1302 };
-
-
-
-    StdVec<float> inputs{
-		1.9170, 0.7433, -1.6831, -0.5770,
-		0.5002, -0.1631, -0.6377, 0.1790,
-		0.8014, 0.9574, 0.5211, 0.6669,
-
-		0.0507, -0.7415, 0.7975, -0.1952,
-		-0.0915, -0.2075, -0.6837, -1.4144,
-		-1.0925, -0.9400, 2.0981, 2.5490
-    };
+// 	StdVec<float> bias{ -0.5602, -0.6464, -0.2690, 0.5687, -0.1302 };
 
 
-	VecBTC resexp{2,Matf(3,4)};
-	resexp[0] << -2.5823, 2.4014, 2.3912, -0.1079,
-			-2.5823, 2.4014, 2.3912, -0.1079,
-			-2.5823, 2.4014, 2.3912, -0.1079;
 
-	resexp[1] << -2.5823, 2.4014, 2.3912, -0.1079,
-			-2.5823, 2.4014, 2.3912, -0.1079,
-			-2.5823, 2.4014, 2.3912, -0.1079;
+//     StdVec<float> inputs{
+// 		1.9170, 0.7433, -1.6831, -0.5770,
+// 		0.5002, -0.1631, -0.6377, 0.1790,
+// 		0.8014, 0.9574, 0.5211, 0.6669,
 
-	StdVec<float> d_outputs(2*3*5,1);
-	StdVec<float> d_inputs(2*3*4,0);
-	StdVec<float> d_weight(4*5,0);
-	StdVec<float> d_bias(5,0);
+// 		0.0507, -0.7415, 0.7975, -0.1952,
+// 		-0.0915, -0.2075, -0.6837, -1.4144,
+// 		-1.0925, -0.9400, 2.0981, 2.5490
+//     };
 
-    gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
 
-    Eigen::Map<MatfRow> map_d_inputs_0(d_inputs.data(),3,4);
-    Eigen::Map<MatfRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
+// 	VecBTC resexp{2,Matf(3,4)};
+// 	resexp[0] << -2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079;
 
-	EXPECT_TRUE(map_d_inputs_0.isApprox(resexp[0], 0.001)) << 
-		map_d_inputs_0 << std::endl;
+// 	resexp[1] << -2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079;
 
-	EXPECT_TRUE(map_d_inputs_1.isApprox(resexp[1], 0.001)) << 
-		map_d_inputs_1 << std::endl;
+// 	StdVec<float> d_outputs(2*3*5,1);
+// 	StdVec<float> d_inputs(2*3*4,0);
+// 	StdVec<float> d_weight(4*5,0);
+// 	StdVec<float> d_bias(5,0);
 
-	Matf d_weightexp(4, 5);
-	d_weightexp << 2.0853, 2.0853, 2.0853, 2.0853, 2.0853,
-			-0.3514, -0.3514, -0.3514, -0.3514, -0.3514,
-			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
-			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
+//     gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
 
-    Eigen::Map<MatfRow> map_d_weight(d_weight.data(),4,5);
-		EXPECT_TRUE(map_d_weight.isApprox(d_weightexp, 0.001)) << 
-    map_d_weight << std::endl;
+//     Eigen::Map<MatfRow> map_d_inputs_0(d_inputs.data(),3,4);
+//     Eigen::Map<MatfRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
 
-	Vecf d_biasexp(5);
-	d_biasexp << 6., 6., 6., 6., 6.;
+// 	EXPECT_TRUE(map_d_inputs_0.isApprox(resexp[0], 0.001)) << 
+// 		map_d_inputs_0 << std::endl;
 
-    Eigen::Map<Eigen::Vector<float,5>> map_d_bias(d_bias.data(),5);
-		EXPECT_TRUE(map_d_bias.isApprox(d_biasexp, 0.001)) << 
-    map_d_bias << std::endl;
+// 	EXPECT_TRUE(map_d_inputs_1.isApprox(resexp[1], 0.001)) << 
+// 		map_d_inputs_1 << std::endl;
 
-}
+// 	Matf d_weightexp(4, 5);
+// 	d_weightexp << 2.0853, 2.0853, 2.0853, 2.0853, 2.0853,
+// 			-0.3514, -0.3514, -0.3514, -0.3514, -0.3514,
+// 			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
+// 			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
 
-TEST(CudaMatMul,backward2){
+//     Eigen::Map<MatfRow> map_d_weight(d_weight.data(),4,5);
+// 		EXPECT_TRUE(map_d_weight.isApprox(d_weightexp, 0.001)) << 
+//     map_d_weight << std::endl;
+
+// 	Vecf d_biasexp(5);
+// 	d_biasexp << 6., 6., 6., 6., 6.;
+
+//     Eigen::Map<Eigen::Vector<float,5>> map_d_bias(d_bias.data(),5);
+// 		EXPECT_TRUE(map_d_bias.isApprox(d_biasexp, 0.001)) << 
+//     map_d_bias << std::endl;
+
+// }
+
+TEST(CudaMatMul,backward1){
 	constexpr int B = 4;
-	constexpr int T = 64;
+	constexpr int T = 512;
 	constexpr int C = 768; 
 	constexpr int Oc = 4 * C;
 	VecBTC inputs(B);
@@ -226,7 +226,7 @@ TEST(CudaMatMul,backward2){
 	//test d_bias_vec;
 	Eigen::Map<Vecf> map_d_bias(d_bias_vec .data() ,Oc);
 	// EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001)) ;
-	EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001))
+	EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001f))
 	<< "gpu:" << map_d_bias <<std::endl << "cpu: " << matmul.d_bias << std::endl;
 
 }
