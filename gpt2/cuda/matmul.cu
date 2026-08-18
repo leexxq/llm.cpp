@@ -1,4 +1,3 @@
-#include "cutlass/cutlass.h"
 #include "cutlass/util/device_memory.h"
 #include "matmul.cuh"
 #include "cutlass/gemm/device/gemm.h"
@@ -7,7 +6,180 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include "utils.cuh"
+#include <cute/tensor.hpp>
+namespace gpt2cuda{
+namespace kernel{
+    using namespace cute;
+    template<class STensor>
+    __forceinline__ __device__ auto convert_to_rowcol(STensor& tensor){
+        Layout flat_layout = flatten(tensor.layout());//(x,y, M,N)
+        auto row_layout = append(select<1,2>(flat_layout),select<0,3>(flat_layout));
+        return group_modes<0,2>(make_tensor(tensor.data(),row_layout));
+    }
+    template <int threads = 128,int Br = 64, int Bc = 32>
+    __global__ void MatrixColSumKernel(float* output , float const* input,int M, int N){
+        Layout I_layout = make_layout(make_shape(M,N),make_stride(N,_1{}));//(M,N)
+        Tensor I_tensor = make_tensor(make_gmem_ptr(input),I_layout);
+
+        Layout O_layout = make_layout(make_shape(N),make_stride(_1{}));
+        Tensor O_tensor = make_tensor(make_gmem_ptr(output),O_layout);//(N)
+
+
+
+        using threads_per_col =  Int<32 / (128 / (sizeof(float) * 8))>;
+        using threads_per_row = Int<threads / threads_per_col{}>;
+
+        using S2RCopyAtom = Copy_Atom<AutoVectorizingCopy,float>;
+        using S2RCpThrLayout = Layout<Shape<threads_per_row,threads_per_col>,Stride<_1,threads_per_row>>; 
+
+        TiledCopy s2r_tiled_cp = make_tiled_copy(S2RCopyAtom{},S2RCpThrLayout{},Layout<Shape<_4,_1>>{});
+
+        
+        __shared__ float smemI[Br*Bc];
+        __shared__ float smemO[Bc];
+
+        Tensor sI = make_tensor(make_smem_ptr(smemI),make_layout(make_shape(Int<Br>{},Int<Bc>{}),LayoutRight{}));//(Br,Bc)
+
+        using SwzFn = Swizzle<5,0,5>;
+        auto sI_swz_layout = composition(SwzFn{},sI.layout());
+        Tensor sI_swz = make_tensor(make_smem_ptr(smemI),sI_swz_layout);//(Br,Bc)
+
+
+        Tensor gI_first = local_tile(I_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(_0{},blockIdx.x));//(Br,Bc)
+
+        using G2SCpThrLayout = Layout<Shape<Int<threads/32>,_32>,Stride<_32,_1>>;
+        Tensor tsI = local_partition(sI_swz,G2SCpThrLayout{},threadIdx.x);
+        Tensor tgI_first = local_partition(gI_first, G2SCpThrLayout{},threadIdx.x);
+        
+        copy(tgI_first,tsI);
+        cp_async_fence();
+
+
+        Tensor I_identity_tensor = make_identity_tensor(make_shape(Int<Br>{},Int<Bc>{}));
+        ThrCopy s2r_thr_cp = s2r_tiled_cp.get_slice(threadIdx.x);
+        Tensor tOsI = s2r_thr_cp.partition_S(sI_swz);
+        Tensor tOrI = s2r_thr_cp.retile_D(make_fragment_like<float>(shape(tOsI)));
+        Tensor I_identity_frag = s2r_thr_cp.partition_S(I_identity_tensor);
+
+        Tensor col_tOrI = convert_to_rowcol(tOrI);
+        Tensor col_sums = make_tensor<float>(size<1>(col_tOrI));
+        Tensor col_I_identity_frag= convert_to_rowcol(I_identity_frag);
+
+        clear(col_sums);
+
+        int Tr = M/Br;
+        // if(thread0()){
+        //     print("cur Tr = ");
+        //     print(Tr);
+        //     print("\n");
+        // }
+        for(int k =0 ; k < Tr ; ++k){
+
+            cp_async_wait<0>();
+            __syncthreads();
+
+
+            //copy smem to register
+            copy(s2r_tiled_cp,tOsI,tOrI);
+
+            // prefetch next block
+            {
+                if(k < Tr - 1){
+                    Tensor gI = local_tile(I_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(k + 1,blockIdx.x));
+                    Tensor tgI = local_partition(gI, G2SCpThrLayout{},threadIdx.x);
+                    copy(tgI,tsI);
+                    cp_async_fence();
+                }
+            }
+
+            // compute sum
+            for(int c =0 ; c < size<1>(col_tOrI); ++c){
+                for(int r =0 ; r < size<0>(col_tOrI); ++r){
+                    col_sums(c) += col_tOrI(r,c);
+                }
+                for(int off = 1 ; off < threads_per_row{};off<<=1){
+                    col_sums(c) += __shfl_xor_sync(0xffffffffU,col_sums(c),off);
+                }
+            }
+
+            // {
+            //     __syncthreads();
+            //     if(thread0()){
+            //         print_tensor(local_tile(I_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(k,blockIdx.x)));
+            //         print_tensor(sI_swz);
+            //         print("col_sums:") ;
+            //         print_tensor(col_sums);
+            //         print_tensor(tOrI);
+            //         print_tensor(col_tOrI);
+            //         print_tensor(col_I_identity_frag);
+            //     }
+            //     __syncthreads();
+            // }
+
+            if(get<0>(col_I_identity_frag(_0{})) != _0{}){
+                clear(col_sums);
+            }
+
+        }
+        Tensor sO = make_tensor(make_smem_ptr(smemO),make_layout(make_shape(Int<Bc>{})));
+
+        if(get<0>(col_I_identity_frag(0)) == _0{}){
+            for(int c= 0 ; c < size(col_sums); ++c){
+                sO(get<1>(col_I_identity_frag(0,c))) = col_sums(c);
+            }
+        }
+        __syncthreads();
+
+        // {
+        //     if(thread0()){
+        //         print_tensor(local_tile(I_tensor,make_tile(Int<Br>{},Int<Bc>{}),make_coord(Tr-1,blockIdx.x)));
+        //         print_tensor(sI_swz);
+        //         print("col_sums:") ; print_tensor(col_sums);
+        //         print_tensor(tOrI);
+        //         print_tensor(col_tOrI);
+        //         print_tensor(col_I_identity_frag);
+        //     }
+        //     __syncthreads();
+        //      print_tensor(sO);
+        // }
+        
+
+        Tensor gO = local_tile(O_tensor,make_tile(Int<Bc>{}),make_coord(blockIdx.x));
+        Tensor local_O_identity_tensor = make_identity_tensor(make_shape(Int<Bc>{}));
+
+        using S2GCopyAtom = Copy_Atom<UniversalCopy<uint128_t>,float>;
+        using S2GCpThrLayout = Layout<Shape<Int<threads>>>; 
+        TiledCopy s2g_tiled_cp = make_tiled_copy(S2GCopyAtom{},S2GCpThrLayout{},Layout<Shape<_4>>{});
+
+        ThrCopy s2g_thr_cp = s2g_tiled_cp.get_slice(threadIdx.x);
+        Tensor tsO = s2g_thr_cp.partition_S(sO);
+        Tensor tgO = s2g_thr_cp.partition_D(gO);
+        
+
+        Tensor local_O_identity  = s2g_thr_cp.partition_D(local_O_identity_tensor);
+        CUTE_UNROLL 
+        for(int i = 0 ; i < size<1>(tsO) ; ++i){
+            if(elem_less(get<0>(local_O_identity(_0{},i)),Bc)){
+                copy(s2g_tiled_cp,tsO,tgO);
+            }
+        }
+        // if(thread0()){
+        //     print_tensor(O_tensor);
+        // }
+    }
+    template <int Br = 64 , int Bc = 32>
+    void MatrixColSumCUDA(float* output , float const* input,int M, int N){
+        constexpr int threads = 128;
+        assert(M > 0 && N % Bc == 0);
+        assert(N > 0 && M % Br ==0);
+
+        kernel::MatrixColSumKernel<128,Br,Bc><<<cute::ceil_div(N, Bc), threads>>>(output, input, M, N);
+        CUDA_CHECK_LAST();
+    }
+}
+
+}
+
     
 
 template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
@@ -255,9 +427,8 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
     }
 
     if(d_bias_d != nullptr){
-        gpt2cuda::Reduce1D<>(d_bias_d, d_outputs_d, B*T*Oc, Oc);
+        gpt2cuda::kernel::MatrixColSumCUDA(d_bias_d, d_outputs_d, B*T,Oc);
     }
-    
 }
 
 void gpt2cuda::BatchMatmulNNForward(float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T,int  C,int Oc){

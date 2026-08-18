@@ -226,7 +226,8 @@ TEST(CudaMatMul,backward2){
 	//test d_bias_vec;
 	Eigen::Map<Vecf> map_d_bias(d_bias_vec .data() ,Oc);
 	// EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001)) ;
-	EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001)) << map_d_bias <<std::endl << matmul.d_bias << std::endl;
+	EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001))
+	<< "gpu:" << map_d_bias <<std::endl << "cpu: " << matmul.d_bias << std::endl;
 
 }
 
