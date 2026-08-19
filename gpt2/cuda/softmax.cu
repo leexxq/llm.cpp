@@ -10,7 +10,7 @@ namespace gpt2cuda {
 namespace kernel{
 
     template<int threads=256>
-    __global__ void SoftmaxforwardKernel(float * outputs, float const * inputs , int ld , int length,int stride){
+    __global__ void SoftmaxForwardKernel(float * outputs, float const * inputs , int ld , int length,int stride){
         const int bidx = blockIdx.x;
         const int warpidx = threadIdx.x / warpSize;
 
@@ -101,7 +101,7 @@ namespace kernel{
 
         // std::cout <<"blocks:" << blocks << std::endl;
         
-        SoftmaxforwardKernel<threads><<<blocks,threads,0,stream>>>(outputs,inputs,ld,length,stride); 
+        SoftmaxForwardKernel<threads><<<blocks,threads,0,stream>>>(outputs,inputs,ld,length,stride); 
         CUDA_CHECK_LAST();
     }
 

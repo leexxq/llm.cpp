@@ -133,7 +133,6 @@ namespace gpt2cuda {
     public:
         DevVecf probs_;//(B,T,Vp)
         DevVecf losses; // (B,T)
-        float mean_loss = -1.f; 
 
     private:
         void Init(size_t B, size_t T);
@@ -145,6 +144,7 @@ namespace gpt2cuda {
         GPT2(const GPT2 &&gpt2) = delete;
 
         void Forward(Stream& stream);
+        void Forward(DevVecf& losses , Stream& stream);
 
 
         [[__nodiscard__("stream will used train later")]]Stream CreateStream(StreamOption options = StreamOption::NOP) const {

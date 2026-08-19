@@ -167,7 +167,6 @@ void GPT2::Init(size_t B,size_t T){
     config_.Print();
 
     params_bytes_ = 0;
-    mean_loss = 0.f;
 
 
     {
@@ -299,6 +298,11 @@ void GPT2::Init(size_t B,size_t T){
 
 }
 void GPT2::Forward(Stream& s){
+    Forward(this->losses,s);
+}
+
+
+void GPT2::Forward(DevVecf& losses,Stream& s){
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
@@ -322,8 +326,6 @@ void GPT2::Forward(Stream& s){
 
     if(!s.is_only_refer) {
         BatchCrossEntropyForward(losses,probs_,s.targets,B,T,Vp,stream);
-    }else {
-        mean_loss = -1.f;
     }
 }
 
@@ -353,22 +355,17 @@ void GPT2::SetTrainData(Stream& s,const PinVeci& inputs, const PinVeci& targets)
 
 float GPT2::GetLossSync(const Stream& s){
     auto stream = s.GetStream();
-    if(mean_loss < 0.f){
-        throw std::runtime_error("mean_loss is not computed yet. Call Forward() with targets first.");
-    }else{
-        PinVecf losses_h(losses.size());
-        losses.to(losses_h,stream);
-        CUDA_CHECK(cudaStreamSynchronize(stream));
-        mean_loss = std::accumulate(losses_h.begin(),losses_h.end(),mean_loss) / (B_*T_);
-        return mean_loss;
-    }
+    PinVecf losses_h(losses.size());
+    losses.to(losses_h,stream);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    float mean_loss = std::accumulate(losses_h.begin(),losses_h.end(),0.f) / (B_*T_);
+    return mean_loss;
 }
 
 
 void GPT2::ZeroLoss(Stream& s){
     auto stream = s.GetStream();
     losses.zero(stream);
-    mean_loss = 0.f;
 }
 
 // #define quick_debug_print(v,stream) \
