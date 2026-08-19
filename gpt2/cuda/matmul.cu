@@ -4,11 +4,12 @@
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include <cassert>
-#include <cstddef>
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <cute/tensor.hpp>
+#include <type_traits>
+
+
 namespace gpt2cuda{
 namespace kernel{
     using namespace cute;
@@ -185,35 +186,45 @@ namespace kernel{
 
 }
 
+
+// // The code section below describes datatype for input, output matrices and computation between
+// // elements in input matrices.
+using ElementAccumulator = float;                   // <- data type of accumulator
+using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
+using ElementInputA = float;              // <- data type of elements in input matrix A
+using ElementInputB = float;              // <- data type of elements in input matrix B
+using ElementOutput = float;                        // <- data type of elements in output matrix D
+using OptClass = cutlass::arch::OpClassTensorOp;
+
+
+using ThreadblockShape =   cutlass::gemm::GemmShape<128,128,16>;
+
+/// Warp-level tile size (concept: GemmShape)
+using WarpShape = cutlass::gemm::GemmShape<64,64,16>;
+
+// tf tensor core shape 
+using InstructionShape= cutlass::gemm::GemmShape<16, 8, 8>;
+
+using BatchThreadblockSwizzle = cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;
     
+using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+
+using Stages     = std::integral_constant<int, 2>;
+using AlignmentA = std::integral_constant<int, 4>;
+using AlignmentB = std::integral_constant<int, 4>;
+using BatchOperator = cutlass::arch::OpMultiplyAdd;
+using LinearEpCount = std::integral_constant<int, 4>;
+
 
 template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
 void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const * weight_d, float const * bias_d ,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
-    // // The code section below describes datatype for input, output matrices and computation between
-    // // elements in input matrices.
-    using ElementAccumulator = float;                   // <- data type of accumulator
-    using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-    using ElementInputA = float;              // <- data type of elements in input matrix A
-    using ElementInputB = float;              // <- data type of elements in input matrix B
-    using ElementOutput = float;                        // <- data type of elements in output matrix D
-    using OptClass = cutlass::arch::OpClassTensorOp;
-
-
-    using ThreadblockShape =   cutlass::gemm::GemmShape<128,128,16>;
-
-    /// Warp-level tile size (concept: GemmShape)
-    using WarpShape = cutlass::gemm::GemmShape<64,64,16>;
-
-    // tf tensor core shape 
-    using InstructionShape= cutlass::gemm::GemmShape<16, 8, 8>;
 
     if(bias_d != nullptr){
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
-        1,
+        LinearEpCount::value,
         ElementAccumulator,
         ElementComputeEpilogue,
         cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
-
 
         using Gemm = cutlass::gemm::device::GemmBatched<
             ElementInputA, LayoutA,
@@ -223,7 +234,12 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             ThreadblockShape,
             WarpShape,
             InstructionShape,
-            EpilogueOutputOp
+            EpilogueOutputOp,
+            BatchThreadblockSwizzle,
+            Stages::value,
+            AlignmentA::value,
+            AlignmentB::value,
+            BatchOperator
         >;
 
         Gemm gemm;
@@ -254,7 +270,7 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
     }else {
 
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
-        1,
+        LinearEpCount::value,
         ElementAccumulator,
         ElementComputeEpilogue,
         cutlass::epilogue::thread::ScaleType::Nothing>;
@@ -268,7 +284,12 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             ThreadblockShape,
             WarpShape,
             InstructionShape,
-            EpilogueOutputOp
+            EpilogueOutputOp,
+            BatchThreadblockSwizzle,
+            Stages::value,
+            AlignmentA::value,
+            AlignmentB::value,
+            BatchOperator
         >;
 
         Gemm gemm;
@@ -301,40 +322,10 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
 
 template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
 void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,float const * d_outputs_d, float const *  inputs_d , float const * weight_d,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
-
-    // // The code section below describes datatype for input, output matrices and computation between
-    // // elements in input matrices.
-    using ElementAccumulator = float;                   // <- data type of accumulator
-    using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-    using ElementInputA = float;              // <- data type of elements in input matrix A
-    using ElementInputB = float;              // <- data type of elements in input matrix B
-    using ElementOutput = float;                        // <- data type of elements in output matrix D
-    using OptClass = cutlass::arch::OpClassTensorOp;
-
-
-    // using ThreadblockShape = cutlass::gemm::device::DefaultGemmConfiguration<
-    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-    //     ElementAccumulator>::ThreadblockShape;
-    using ThreadblockShape =   cutlass::gemm::GemmShape<128,128,16>;
-
-    // using WarpShape = cutlass::gemm::device::DefaultGemmConfiguration<
-    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-    //     ElementAccumulator>::WarpShape;
-    using WarpShape = cutlass::gemm::GemmShape<64,64,16>;
-    /// Warp-level tile size (concept: GemmShape)
-
-    // using InstructionShape= cutlass::gemm::device::DefaultGemmConfiguration<
-    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-    //     ElementAccumulator>::InstructionShape;
-
-    using InstructionShape= cutlass::gemm::GemmShape<16, 8, 8>;
-
-    /// Epilogue output operator
-    using alloctor = cutlass::device_memory::allocation<float>;
-
     {
+        /// Epilogue output operator
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
-            1,
+            LinearEpCount::value,
             ElementAccumulator,
             ElementComputeEpilogue,
             cutlass::epilogue::thread::ScaleType::Nothing>;
@@ -348,7 +339,12 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
-            EpilogueOutputOp
+            EpilogueOutputOp,
+            BatchThreadblockSwizzle,
+            Stages::value,
+            AlignmentA::value,
+            AlignmentB::value,
+            BatchOperator
         >;
 
         GemmABT gemm;
@@ -385,7 +381,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
 
     {
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
-            1,
+            LinearEpCount::value,
             ElementAccumulator,
             ElementComputeEpilogue,
             cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
@@ -399,7 +395,11 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
-            EpilogueOutputOp
+            EpilogueOutputOp,
+            ThreadblockSwizzle,
+            Stages::value,
+            AlignmentA::value,
+            AlignmentB::value
         >;
 
         GemmATB gemm;
