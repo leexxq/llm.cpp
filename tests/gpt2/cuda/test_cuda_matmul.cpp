@@ -66,72 +66,52 @@ TEST(CudaMatMul, forward1){
 }
 
 
-// TEST(CudaMatMul, backward2){
-// 	StdVec<float> weight = {
-// 		0.5496, -1.0675, -0.3498, -1.7053, -0.0094,
-// 		0.8118, 0.6951, 1.7514, -0.0827, -0.7742,
-// 		0.6460, -0.5852, 1.0690, 2.4317, -1.1704,
-// 		0.0139, -0.5536, -0.0932, 0.6729, -0.1479
-// 	};
+TEST(CudaMatMul, forward2){
+	constexpr int B = 4;
+	constexpr int T = 512;
+	constexpr int C = 768; 
+	constexpr int Oc = 4 * C;
 
-// 	StdVec<float> bias{ -0.5602, -0.6464, -0.2690, 0.5687, -0.1302 };
+	auto matmul = MatMul(C,Oc);
+
+	matmul.weight = Matf::Random(C,Oc);
+	matmul.bias = Vecf::Random(Oc);
+
+	VecBTC inputs(B);
+	StdVec<float> inputs_vec(B * T * C);
+	for(int i =0 ; i < B ; ++i){
+		inputs[i] = Matf::Random(T,C);
+		Eigen::Map<MatfRow> (inputs_vec.data() + i * T*C,T,C) = inputs[i];
+	}
+
+	VecBTC outputs_res;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		outputs_res = matmul.Forward(inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+    StdVec<float> outputs_vec(B*T*Oc,0);
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		gpt2cuda::BatchMatmulNTForward(outputs_vec.data(),inputs_vec.data(),matmul.weight.data(),matmul.bias.data(),B,T,C,Oc);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+	for(int b = 0 ; b < B ; ++ b){
+		Eigen::Map<MatfRow> map_output_vec(outputs_vec.data() + b * T * Oc,T,Oc);
+			EXPECT_TRUE(map_output_vec.isApprox(outputs_res[b], 0.001))
+			 << "gpu" << std::endl << map_output_vec.block<3,3>(0,0) << std::endl 
+			<< "cpu" << std::endl <<  outputs_res[b].block<3,3> (0,0) << std::endl;
+	}
 
 
+}
 
-//     StdVec<float> inputs{
-// 		1.9170, 0.7433, -1.6831, -0.5770,
-// 		0.5002, -0.1631, -0.6377, 0.1790,
-// 		0.8014, 0.9574, 0.5211, 0.6669,
-
-// 		0.0507, -0.7415, 0.7975, -0.1952,
-// 		-0.0915, -0.2075, -0.6837, -1.4144,
-// 		-1.0925, -0.9400, 2.0981, 2.5490
-//     };
-
-
-// 	VecBTC resexp{2,Matf(3,4)};
-// 	resexp[0] << -2.5823, 2.4014, 2.3912, -0.1079,
-// 			-2.5823, 2.4014, 2.3912, -0.1079,
-// 			-2.5823, 2.4014, 2.3912, -0.1079;
-
-// 	resexp[1] << -2.5823, 2.4014, 2.3912, -0.1079,
-// 			-2.5823, 2.4014, 2.3912, -0.1079,
-// 			-2.5823, 2.4014, 2.3912, -0.1079;
-
-// 	StdVec<float> d_outputs(2*3*5,1);
-// 	StdVec<float> d_inputs(2*3*4,0);
-// 	StdVec<float> d_weight(4*5,0);
-// 	StdVec<float> d_bias(5,0);
-
-//     gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
-
-//     Eigen::Map<MatfRow> map_d_inputs_0(d_inputs.data(),3,4);
-//     Eigen::Map<MatfRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
-
-// 	EXPECT_TRUE(map_d_inputs_0.isApprox(resexp[0], 0.001)) << 
-// 		map_d_inputs_0 << std::endl;
-
-// 	EXPECT_TRUE(map_d_inputs_1.isApprox(resexp[1], 0.001)) << 
-// 		map_d_inputs_1 << std::endl;
-
-// 	Matf d_weightexp(4, 5);
-// 	d_weightexp << 2.0853, 2.0853, 2.0853, 2.0853, 2.0853,
-// 			-0.3514, -0.3514, -0.3514, -0.3514, -0.3514,
-// 			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
-// 			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
-
-//     Eigen::Map<MatfRow> map_d_weight(d_weight.data(),4,5);
-// 		EXPECT_TRUE(map_d_weight.isApprox(d_weightexp, 0.001)) << 
-//     map_d_weight << std::endl;
-
-// 	Vecf d_biasexp(5);
-// 	d_biasexp << 6., 6., 6., 6., 6.;
-
-//     Eigen::Map<Eigen::Vector<float,5>> map_d_bias(d_bias.data(),5);
-// 		EXPECT_TRUE(map_d_bias.isApprox(d_biasexp, 0.001)) << 
-//     map_d_bias << std::endl;
-
-// }
 
 TEST(CudaMatMul,backward1){
 	constexpr int B = 4;
@@ -294,3 +274,70 @@ TEST(CudaMatMul,fused_gelu_forward1){
 	}
 
 }
+
+// TEST(CudaMatMul, backward2){
+// 	StdVec<float> weight = {
+// 		0.5496, -1.0675, -0.3498, -1.7053, -0.0094,
+// 		0.8118, 0.6951, 1.7514, -0.0827, -0.7742,
+// 		0.6460, -0.5852, 1.0690, 2.4317, -1.1704,
+// 		0.0139, -0.5536, -0.0932, 0.6729, -0.1479
+// 	};
+
+// 	StdVec<float> bias{ -0.5602, -0.6464, -0.2690, 0.5687, -0.1302 };
+
+
+
+//     StdVec<float> inputs{
+// 		1.9170, 0.7433, -1.6831, -0.5770,
+// 		0.5002, -0.1631, -0.6377, 0.1790,
+// 		0.8014, 0.9574, 0.5211, 0.6669,
+
+// 		0.0507, -0.7415, 0.7975, -0.1952,
+// 		-0.0915, -0.2075, -0.6837, -1.4144,
+// 		-1.0925, -0.9400, 2.0981, 2.5490
+//     };
+
+
+// 	VecBTC resexp{2,Matf(3,4)};
+// 	resexp[0] << -2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079;
+
+// 	resexp[1] << -2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079,
+// 			-2.5823, 2.4014, 2.3912, -0.1079;
+
+// 	StdVec<float> d_outputs(2*3*5,1);
+// 	StdVec<float> d_inputs(2*3*4,0);
+// 	StdVec<float> d_weight(4*5,0);
+// 	StdVec<float> d_bias(5,0);
+
+//     gpt2cuda::BatchMatmulNNBackward(d_inputs.data(),d_weight.data(),d_bias.data(),d_outputs.data(),inputs.data(),weight.data(),2,3,4,5);
+
+//     Eigen::Map<MatfRow> map_d_inputs_0(d_inputs.data(),3,4);
+//     Eigen::Map<MatfRow> map_d_inputs_1(d_inputs.data() + 3 * 4,3,4);
+
+// 	EXPECT_TRUE(map_d_inputs_0.isApprox(resexp[0], 0.001)) << 
+// 		map_d_inputs_0 << std::endl;
+
+// 	EXPECT_TRUE(map_d_inputs_1.isApprox(resexp[1], 0.001)) << 
+// 		map_d_inputs_1 << std::endl;
+
+// 	Matf d_weightexp(4, 5);
+// 	d_weightexp << 2.0853, 2.0853, 2.0853, 2.0853, 2.0853,
+// 			-0.3514, -0.3514, -0.3514, -0.3514, -0.3514,
+// 			0.4122, 0.4122, 0.4122, 0.4122, 0.4122,
+// 			1.2083, 1.2083, 1.2083, 1.2083, 1.2083;
+
+//     Eigen::Map<MatfRow> map_d_weight(d_weight.data(),4,5);
+// 		EXPECT_TRUE(map_d_weight.isApprox(d_weightexp, 0.001)) << 
+//     map_d_weight << std::endl;
+
+// 	Vecf d_biasexp(5);
+// 	d_biasexp << 6., 6., 6., 6., 6.;
+
+//     Eigen::Map<Eigen::Vector<float,5>> map_d_bias(d_bias.data(),5);
+// 		EXPECT_TRUE(map_d_bias.isApprox(d_biasexp, 0.001)) << 
+//     map_d_bias << std::endl;
+
+// }

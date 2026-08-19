@@ -196,20 +196,17 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
     using ElementInputA = float;              // <- data type of elements in input matrix A
     using ElementInputB = float;              // <- data type of elements in input matrix B
     using ElementOutput = float;                        // <- data type of elements in output matrix D
+    using OptClass = cutlass::arch::OpClassTensorOp;
 
 
-    using ThreadblockShape = cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::ThreadblockShape;
+    using ThreadblockShape =   cutlass::gemm::GemmShape<128,128,16>;
 
-    using WarpShape = cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::WarpShape;
     /// Warp-level tile size (concept: GemmShape)
+    using WarpShape = cutlass::gemm::GemmShape<64,64,16>;
 
-    using InstructionShape= cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::InstructionShape;
+    // tf tensor core shape 
+    using InstructionShape= cutlass::gemm::GemmShape<16, 8, 8>;
+
     if(bias_d != nullptr){
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
         1,
@@ -222,7 +219,7 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             ElementInputA, LayoutA,
             ElementInputB, LayoutB,
             ElementOutput, cutlass::layout::RowMajor,
-            ElementAccumulator,cutlass::arch::OpClassSimt,cutlass::arch::Sm80,
+            ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
@@ -267,7 +264,7 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
             ElementInputA, LayoutA,
             ElementInputB, LayoutB,
             ElementOutput, cutlass::layout::RowMajor,
-            ElementAccumulator,cutlass::arch::OpClassSimt,cutlass::arch::Sm80,
+            ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
@@ -312,20 +309,26 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
     using ElementInputA = float;              // <- data type of elements in input matrix A
     using ElementInputB = float;              // <- data type of elements in input matrix B
     using ElementOutput = float;                        // <- data type of elements in output matrix D
+    using OptClass = cutlass::arch::OpClassTensorOp;
 
 
-    using ThreadblockShape = cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::ThreadblockShape;
+    // using ThreadblockShape = cutlass::gemm::device::DefaultGemmConfiguration<
+    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
+    //     ElementAccumulator>::ThreadblockShape;
+    using ThreadblockShape =   cutlass::gemm::GemmShape<128,128,16>;
 
-    using WarpShape = cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::WarpShape;
+    // using WarpShape = cutlass::gemm::device::DefaultGemmConfiguration<
+    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
+    //     ElementAccumulator>::WarpShape;
+    using WarpShape = cutlass::gemm::GemmShape<64,64,16>;
     /// Warp-level tile size (concept: GemmShape)
 
-    using InstructionShape= cutlass::gemm::device::DefaultGemmConfiguration<
-        cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
-        ElementAccumulator>::InstructionShape;
+    // using InstructionShape= cutlass::gemm::device::DefaultGemmConfiguration<
+    //     cutlass::arch::OpClassSimt, cutlass::arch::Sm80, ElementInputA, ElementInputB, ElementOutput,
+    //     ElementAccumulator>::InstructionShape;
+
+    using InstructionShape= cutlass::gemm::GemmShape<16, 8, 8>;
+
     /// Epilogue output operator
     using alloctor = cutlass::device_memory::allocation<float>;
 
@@ -341,7 +344,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             ElementInputA, LayoutA,
             ElementInputB, typename  cutlass::layout::LayoutTranspose<LayoutB>::type,
             ElementOutput, cutlass::layout::RowMajor,
-            ElementAccumulator,cutlass::arch::OpClassSimt,cutlass::arch::Sm80,
+            ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
@@ -392,7 +395,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             ElementInputA, typename  cutlass::layout::LayoutTranspose<LayoutA>::type,
             ElementInputB, LayoutB,
             ElementOutput, cutlass::layout::RowMajor,
-            ElementAccumulator,cutlass::arch::OpClassSimt,cutlass::arch::Sm80,
+            ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
