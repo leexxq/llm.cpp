@@ -266,10 +266,12 @@ TEST(CudaLayer, backward1){
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
 	}
+    cudaStreamDestroy(stream);
 
 
 
-    //
+    
+    // due flash attention , it cannot passed ... 
     // for(int i =0;i < B; ++i){
     //     Eigen::Map<MatfRow> map_d_inputs_vec(d_inputs_vec.data() + i*T*C,T,C);
     //     EXPECT_TRUE(map_d_inputs_vec.isApprox(d_inputs_res[i], 0.01f)) 

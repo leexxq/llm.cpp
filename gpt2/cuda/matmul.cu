@@ -1,4 +1,6 @@
 #include "cute/arch/copy.hpp"
+#include "cutlass/arch/arch.h"
+#include "cutlass/layout/matrix.h"
 #include "cutlass/util/device_memory.h"
 #include "matmul.cuh"
 #include "cutlass/gemm/device/gemm.h"
@@ -216,7 +218,7 @@ using BatchOperator = cutlass::arch::OpMultiplyAdd;
 using LinearEpCount = std::integral_constant<int, 4>;
 
 
-template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
+template<typename LayoutInput = cutlass::layout::RowMajor,typename LayoutWeight = cutlass::layout::RowMajor>
 void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const * weight_d, float const * bias_d ,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
 
     if(bias_d != nullptr){
@@ -227,8 +229,8 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
         cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
 
         using Gemm = cutlass::gemm::device::GemmBatched<
-            ElementInputA, LayoutA,
-            ElementInputB, LayoutB,
+            ElementInputA, LayoutInput,
+            ElementInputB, LayoutWeight,
             ElementOutput, cutlass::layout::RowMajor,
             ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
@@ -247,8 +249,8 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
         cutlass::gemm::GemmCoord problem_size(T, Oc, C);
 
         
-        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutA::packed({T,C}));
-        auto B_m = cutlass::make_TensorRef(weight_d,LayoutB::packed({C,Oc}));
+        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutInput::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,LayoutWeight::packed({C,Oc}));
         auto C_m = cutlass::make_TensorRef(bias_d, cutlass::layout::RowMajor());
         auto D_m = cutlass::make_TensorRef(outputs_d, cutlass::layout::RowMajor::packed({T,Oc}));
 
@@ -277,8 +279,8 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
 
 
         using Gemm = cutlass::gemm::device::GemmBatched<
-            ElementInputA, LayoutA,
-            ElementInputB, LayoutB,
+            ElementInputA, LayoutInput,
+            ElementInputB, LayoutWeight,
             ElementOutput, cutlass::layout::RowMajor,
             ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
@@ -297,8 +299,8 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
         cutlass::gemm::GemmCoord problem_size(T, Oc, C);
 
         
-        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutA::packed({T,C}));
-        auto B_m = cutlass::make_TensorRef(weight_d,LayoutB::packed({C,Oc}));
+        auto A_m = cutlass::make_TensorRef(inputs_d,LayoutInput::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,LayoutWeight::packed({C,Oc}));
         auto D_m = cutlass::make_TensorRef(outputs_d, cutlass::layout::RowMajor::packed({T,Oc}));
 
 
@@ -320,8 +322,11 @@ void BatchMatmulForward(float * outputs_d, float const *  inputs_d , float const
     }
 }
 
-template<typename LayoutA = cutlass::layout::RowMajor,typename LayoutB = cutlass::layout::RowMajor>
+template<typename LayoutInput = cutlass::layout::RowMajor,typename LayoutWeight = cutlass::layout::RowMajor>
 void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,float const * d_outputs_d, float const *  inputs_d , float const * weight_d,int B, int T,int  C,int Oc,cudaStream_t stream = 0){
+    using LayoutDOutput = cutlass::layout::RowMajor;
+    using LayoutDWeight = LayoutWeight;
+    using LayoutDInput = LayoutInput;
     {
         /// Epilogue output operator
         using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<ElementOutput, 
@@ -332,15 +337,17 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
 
 
         using GemmABT = cutlass::gemm::device::GemmBatched<
-            ElementInputA, LayoutA,
-            ElementInputB, typename  cutlass::layout::LayoutTranspose<LayoutB>::type,
-            ElementOutput, cutlass::layout::RowMajor,
+            ElementInputA, LayoutDOutput,
+            ElementInputB, typename  cutlass::layout::LayoutTranspose<LayoutWeight>::type,
+            ElementOutput, LayoutDInput,
             ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
             InstructionShape,
             EpilogueOutputOp,
             BatchThreadblockSwizzle,
+            // cutlass::gemm::device::DefaultGemmConfiguration<OptClass, cutlass::arch::Sm80 , ElementInputA, ElementInputB,
+            //                      ElementOutput, ElementAccumulator>::kStages,
             Stages::value,
             AlignmentA::value,
             AlignmentB::value,
@@ -352,10 +359,10 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
         cutlass::gemm::GemmCoord problem_size(T, C, Oc);
 
         
-        auto A_m = cutlass::make_TensorRef(d_outputs_d,LayoutA::packed({T,Oc}));
+        auto A_m = cutlass::make_TensorRef(d_outputs_d,LayoutDOutput::packed({T,Oc}));
         //d_input = d_output @ weight's transpose
-        auto B_m = cutlass::make_TensorRef(weight_d,cutlass::layout::LayoutTranspose<LayoutB>::type::packed({Oc,C}));
-        auto C_m = cutlass::make_TensorRef(d_inputs_d,cutlass::layout::RowMajor::packed({T,C}));
+        auto B_m = cutlass::make_TensorRef(weight_d,cutlass::layout::LayoutTranspose<LayoutWeight>::type::packed({Oc,C}));
+        auto C_m = cutlass::make_TensorRef(d_inputs_d,LayoutDInput::packed({T,C}));
 
         typename GemmABT::Arguments argument{
             problem_size,
@@ -388,9 +395,9 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
 
 
         using GemmATB = cutlass::gemm::device::Gemm<
-            ElementInputA, typename  cutlass::layout::LayoutTranspose<LayoutA>::type,
-            ElementInputB, LayoutB,
-            ElementOutput, cutlass::layout::RowMajor,
+            ElementInputA, typename  cutlass::layout::LayoutTranspose<LayoutInput>::type,
+            ElementInputB, LayoutDOutput,
+            ElementOutput, LayoutDWeight,
             ElementAccumulator,OptClass,cutlass::arch::Sm80,
             ThreadblockShape,
             WarpShape,
@@ -412,9 +419,9 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
         for(int i = 0 ;i < B ; ++i){
 
 
-            auto A_m = cutlass::make_TensorRef(inputs_d +i *T*C ,cutlass::layout::LayoutTranspose<LayoutA>::type::packed({C,T}));
-            auto B_m = cutlass::make_TensorRef(d_outputs_d + i * T*Oc,LayoutB::packed({T,Oc}));
-            auto C_m = cutlass::make_TensorRef(d_weight_d,cutlass::layout::RowMajor::packed({C,Oc}));
+            auto A_m = cutlass::make_TensorRef(inputs_d +i *T*C ,cutlass::layout::LayoutTranspose<LayoutInput>::type::packed({C,T}));
+            auto B_m = cutlass::make_TensorRef(d_outputs_d + i * T*Oc,LayoutDOutput::packed({T,Oc}));
+            auto C_m = cutlass::make_TensorRef(d_weight_d,LayoutDWeight::packed({C,Oc}));
 
             typename GemmATB::Arguments argument{
                 problem_size,

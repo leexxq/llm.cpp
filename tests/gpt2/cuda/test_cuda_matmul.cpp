@@ -212,6 +212,89 @@ TEST(CudaMatMul,backward1){
 
 }
 
+
+TEST(CudaMatMul,backward2){
+	constexpr int B = 4;
+	constexpr int T = 512;
+	constexpr int C = 768; 
+	constexpr int Oc = 4 * C;
+	VecBTC inputs(B);
+	VecBTC d_outputs(B);
+	StdVec<float> inputs_vec(B*T*C);
+	StdVec<float> d_outputs_vec(B*T*Oc);
+	for(int i =0 ; i < B ; ++i){
+		inputs[i] = Matf::Random(T,C);
+		d_outputs[i] = Matf::Random(T,Oc);
+		Eigen::Map<MatfRow>(inputs_vec.data() + i * T * C , T , C) = inputs[i];
+		Eigen::Map<MatfRow>(d_outputs_vec.data() + i * T * Oc , T , Oc) = d_outputs[i];
+	}
+
+	auto matmul = MatMul(C,Oc);
+
+	matmul.weight = Matf::Random(C,Oc);
+
+
+	matmul.bias = Vecf::Random(Oc);
+
+	VecBTC d_inputs_res ;
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		d_inputs_res = matmul.Backward(d_outputs, inputs);
+		auto end = std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[cpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+
+	StdVec<float> d_bias_vec(Oc,0);
+
+	StdVec<float> d_weight_vec(C*Oc,0);
+
+	StdVec<float> d_inputs_vec(B*T*C,0);
+
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		gpt2cuda::BatchMatmulNTBackward(d_inputs_vec.data(), d_weight_vec.data(), d_bias_vec.data(), d_outputs_vec.data(), inputs_vec.data(),matmul.weight.data(), B,T,C,Oc);
+		auto end= std::chrono::high_resolution_clock::now();
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
+	}
+
+	// Eigen::Map<MatRow> map_inputs_vec(inputs_vec.data(),T,C);
+	// std::ofstream log{"log.txt",std::ios::trunc};
+	// log << map_inputs_vec << std::endl;
+
+	//test d_inputs_vec;
+	for(int i =0 ; i < B ; ++i){
+		// for(int j=0; j < T; ++j){
+		// 	for(int k=0; k < C; ++k){
+		// 		EXPECT_NEAR(d_inputs_vec[i*T*C +j*C + k] ,d_inputs_res[i](j,k),0.001f);
+		// 	}
+		// }
+		Eigen::Map<MatfRow> map_d_input(d_inputs_vec .data() + i *T*C,T,C);
+		EXPECT_TRUE(map_d_input.isApprox(d_inputs_res[i], 0.001)) 
+			<< "---gpu---\n"<<map_d_input.block<10,10>(T-10,C-10) << std::endl 
+			<< " ---cpu--- \n" << d_inputs_res[i].block<10,10>(T-10,C-10) <<std::endl ;
+		// std::ofstream log{"log.txt",std::ios::app};
+
+		// log << map_d_input << std::endl;
+	}
+
+	//test d_weight_vec;
+	Eigen::Map<Matf> map_d_weight(d_weight_vec .data() ,Oc,C);
+	// EXPECT_TRUE(map_d_weight.isApprox(matmul.d_weight, 0.001));
+	EXPECT_TRUE(map_d_weight.isApprox(matmul.d_weight, 0.001)) 
+	<< "gpu:\n"<< map_d_weight.block<3,3>(0,0) << std::endl 
+	<< "cpu:\n"<< matmul.d_weight.block<3,3>(0,0) << std::endl;
+
+	//test d_bias_vec;
+	Eigen::Map<Vecf> map_d_bias(d_bias_vec .data() ,Oc);
+	// EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001)) ;
+	EXPECT_TRUE(map_d_bias.isApprox(matmul.d_bias, 0.001f))
+	<< "gpu:" << map_d_bias <<std::endl << "cpu: " << matmul.d_bias << std::endl;
+
+}
+
 TEST(CudaMatMul,fused_gelu_forward1){
 	constexpr int B = 4;
 	constexpr int T = 64;

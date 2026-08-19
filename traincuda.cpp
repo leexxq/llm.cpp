@@ -224,11 +224,6 @@ int main(int argc, char **argv) {
 
 		// gpt2cuda::GPT2::Stream& cur_stream = stream1;
 
-		
-
-		if(!args.one_batch){
-			train_loader.NextBatch(next_inputs.begin(),next_targets.begin());
-		}		
 
 		gpt2.SetTrainData(next_stream,next_inputs, next_targets);
 
@@ -311,6 +306,10 @@ int main(int argc, char **argv) {
 			start_train = std::chrono::high_resolution_clock::now();
 		}
 
+		if(!args.one_batch){
+			train_loader.NextBatch(next_inputs.begin(),next_targets.begin());
+		}		
+
 		CUDA_CHECK(cudaEventSynchronize(stream_finished));
 
 		if (args.enable_gen&&(step+1) % args.gen_iterations == 0) {
@@ -338,6 +337,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	CUDA_CHECK(cudaEventDestroy(stream_finished));
 
 	return 0;
 }
