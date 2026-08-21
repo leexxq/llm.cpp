@@ -10,7 +10,7 @@ namespace gpt2cuda{
 
 	using DAlloc = cutlass::device_memory::allocation<float>;
 
-	void BatchAttentionForward(float *outputs,float * logsumexp , float const *inputs, AttentionType Attention , int B, int T, int C3, int NH,cudaStream_t stream=0){
+	void BatchAttentionForward(float *outputs,float * logsumexp , float const *inputs, AttentionType Attention , int B, int T, int C3, int NH,cudaStream_t stream = cudaStreamDefault){
 		using namespace cute;
 		assert(C3 % 3 == 0);
 		auto C = C3 / 3;

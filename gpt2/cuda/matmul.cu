@@ -1,8 +1,8 @@
 #include "cute/arch/copy.hpp"
+#include "matmul.cuh"
 #include "cutlass/arch/arch.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/util/device_memory.h"
-#include "matmul.cuh"
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include <cassert>
@@ -394,7 +394,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
 
 
-        using GemmATB = cutlass::gemm::device::Gemm<
+        using GemmATB = cutlass::gemm::device::GemmBatched<
             ElementInputA, typename  cutlass::layout::LayoutTranspose<LayoutInput>::type,
             ElementInputB, LayoutDOutput,
             ElementOutput, LayoutDWeight,
@@ -403,7 +403,7 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
             WarpShape,
             InstructionShape,
             EpilogueOutputOp,
-            ThreadblockSwizzle,
+            BatchThreadblockSwizzle,
             Stages::value,
             AlignmentA::value,
             AlignmentB::value
@@ -413,32 +413,33 @@ void BatchMatmulBackward(float * d_inputs_d, float* d_weight_d, float* d_bias_d,
 
         cutlass::gemm::GemmCoord problem_size(C, Oc, T);
 
+
         
         //d_weight= sum( input's transpose @ d_output )
 
-        for(int i = 0 ;i < B ; ++i){
+        auto A_m = cutlass::make_TensorRef(inputs_d ,cutlass::layout::LayoutTranspose<LayoutInput>::type::packed({C,T}));
+        auto B_m = cutlass::make_TensorRef(d_outputs_d,LayoutDOutput::packed({T,Oc}));
+        auto C_m = cutlass::make_TensorRef(d_weight_d,LayoutDWeight::packed({C,Oc}));
 
+        typename GemmATB::Arguments argument{
+            problem_size,
+            A_m,
+            T*C,
+            B_m,
+            T*Oc,
+            C_m,
+            0,
+            C_m,
+            0,
+            {1},
+            B
+        };
+        auto status = gemm(argument,nullptr,stream);
 
-            auto A_m = cutlass::make_TensorRef(inputs_d +i *T*C ,cutlass::layout::LayoutTranspose<LayoutInput>::type::packed({C,T}));
-            auto B_m = cutlass::make_TensorRef(d_outputs_d + i * T*Oc,LayoutDOutput::packed({T,Oc}));
-            auto C_m = cutlass::make_TensorRef(d_weight_d,LayoutDWeight::packed({C,Oc}));
-
-            typename GemmATB::Arguments argument{
-                problem_size,
-                A_m,
-                B_m,
-                C_m,
-                C_m,
-                {1},
-            };
-            auto status = gemm(argument,nullptr,stream);
-
-            if(status != cutlass::Status::kSuccess){
-                std::cerr << cutlass::cutlassGetStatusString(status) << std::endl;
-                exit(EXIT_FAILURE);
-            }
+        if(status != cutlass::Status::kSuccess){
+            std::cerr << cutlass::cutlassGetStatusString(status) << std::endl;
+            exit(EXIT_FAILURE);
         }
-
     }
 
     if(d_bias_d != nullptr){
