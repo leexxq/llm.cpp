@@ -302,7 +302,7 @@ void basic_attention_forward_test(size_t B,size_t T,size_t NH,size_t C){
 // min attention example
 TEST(CudaAttention,flash_attention_f32_forward1){
 	constexpr size_t B = 1;
-	constexpr size_t T = 64;
+	constexpr size_t T = 128;
     constexpr size_t NH = 1 ;
     constexpr size_t C = 32 * NH;
 	basic_attention_forward_test(B, T, NH, C);
@@ -313,7 +313,7 @@ TEST(CudaAttention,flash_attention_f32_forward1){
 // multi batch  and multi head
 TEST(CudaAttention,flash_attention_f32_forward2){
 	constexpr size_t B = 4;
-	constexpr size_t T = 64;
+	constexpr size_t T = 128;
     constexpr size_t NH = 12 ;
     constexpr size_t C = 32 * NH;
     constexpr size_t C3 = 3 * C;
@@ -339,7 +339,7 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 // multi T with C / NH = 64 
 TEST(CudaAttention,flash_attention_f32_forward4){
 	constexpr size_t B = 4;
-	constexpr size_t T = 64;
+	constexpr size_t T = 128;
     constexpr size_t NH = 12;
     constexpr size_t C = 64 * NH;
     constexpr size_t C3 = 3 * C;
@@ -397,7 +397,7 @@ void basic_casual_attention_forward_test(size_t B,size_t T,size_t NH,size_t C){
 // min attention with casual example
 TEST(CudaAttention,flash_attention_casual_f32_forward1){
 	constexpr size_t B = 1;
-	constexpr size_t T = 64;
+	constexpr size_t T = 128;
     constexpr size_t NH = 1 ;
     constexpr size_t C = 32 * NH;
     constexpr size_t C3 = 3 * C;

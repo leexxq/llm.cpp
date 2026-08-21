@@ -72,8 +72,8 @@ cmake -DENABLE_CUDA=ON -DCMAKE_CUDA_COMPILER=/path/to/your/nvcc ..
 ```bash
 cd build
 cmake -DENABLE_TESTS=ON ..
-make -j gpt2test
+make -j gpt2cudatest
 # run unit tests
-./test/gpt2test
+./test/gpt2cudatest
 ```
 
