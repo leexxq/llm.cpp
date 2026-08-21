@@ -12,7 +12,7 @@
 		}while(false)
 
 	#define fwd_threadid_print_tensor(id,desc,tensor) do{\
-			threadid_print(id,desc);\
+			fwd_threadid_print(id,desc);\
 			if(thread(id)){\
 				print_tensor(tensor);\
 			}\

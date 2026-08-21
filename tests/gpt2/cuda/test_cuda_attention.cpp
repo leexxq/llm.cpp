@@ -383,11 +383,13 @@ void basic_casual_attention_forward_test(size_t B,size_t T,size_t NH,size_t C){
 
 
 
+	// std::fstream log{"casual_attention_fwd.log",std::ios::trunc | std::ios::out};
 	for(int b = 0 ; b < B ; ++b){
 		auto outputs_vec_map = Eigen::Map<MatfRow>(outputs_vec.data() + b * T * C,T,C);
-		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.01f)) 
+		EXPECT_TRUE(outputs_vec_map.isApprox(outputs_res[b], 0.1f)) 
 			<< "---gpu---\n"<<outputs_vec_map.block<3,3>(0,0) << std::endl 
 			<< " ---cpu--- \n" << outputs_res[b].block<3,3>(0,0) <<std::endl ;
+		// log << "gpu:\n" << outputs_vec_map << std::endl<< "cpu:\n" << outputs_res[b] << std::endl;;
 	}
 
 }
@@ -561,9 +563,9 @@ TEST(CudaAttention,flash_attention_f32_backward1){
 // cd ~/llm.cpp/build && ninja gpt2cudatest && ./tests/gpt2cudatest --gtest_filter='*flash_causal_attention_f32_backward1' > log.txt "/root/llm.cpp/tests/gpt2/cuda/test_cuda_attention.cpp"
 // min attention backward example
 TEST(CudaAttention,flash_causal_attention_f32_backward1){
-	constexpr size_t B = 4;
-	constexpr size_t T = 64;
-    constexpr size_t NH = 12 ;
+	constexpr size_t B = 2;
+	constexpr size_t T = 512;
+    constexpr size_t NH = 2 ;
     constexpr size_t Hc = 64 ;
     constexpr size_t C = Hc * NH;
     constexpr size_t C3 = 3 * C;

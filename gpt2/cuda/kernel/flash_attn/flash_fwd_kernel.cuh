@@ -7,23 +7,32 @@ using namespace cute;
 
 // flash attention v2,see also https://arxiv.org/pdf/2307.08691
 // visit https://blog.echen.io/p/flashattention-2-in-cute-from-scratch
-template <class TQ, class LayoutQ, class TiledCopyQ,
-		class TK, class LayoutK, class TiledCopyK,
-		class TV, class LayoutV, class TiledCopyV,
-		class TO, class LayoutO, class TiledCopyO,
-		class TL, class LayoutL, 
-		class TiledMMAS, class TiledMMAO,
-		int Br = 64, int Bc = 64,int Hc = 32,AttentionType Attention= AttentionType::Default>
-__global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy_Q,
-		TK const *K, LayoutK L_K, TiledCopyK copy_K,
-		TV const *V, LayoutV L_V, TiledCopyV copy_V,
-		TO *O, LayoutO L_O, TiledCopyO copy_O,
-		TL *L, LayoutL L_L,
-		TiledMMAS mmaS, TiledMMAO mmaO) {
+template <class Config ,class Layouts>
+__global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename Layouts::LayoutQ L_Q,
+		typename Config::TK const *K, typename Layouts::LayoutK L_K, 
+		typename Config::TV const *V, typename Layouts::LayoutV L_V, 
+		typename Config::TO *O, typename Layouts::LayoutO L_O, 
+		typename Config::TL *L, typename Layouts::LayoutL L_L
+		) {
 
-	__shared__ TQ shared_memQ[Br * Hc];
-	__shared__ TK shared_memK[Bc * Hc];
-	__shared__ cute::half_t shared_memV[Bc * Hc];
+	typename Config::CopyQ copy_Q;
+	typename Config::CopyK copy_K;
+	typename Config::CopyV copy_V;
+	typename Config::CopyO copy_O;
+	typename Config::MMAS mmaS;
+	typename Config::MMAO mmaO;
+	constexpr int Br = Config::kBr;
+	constexpr int Bc = Config::kBc;
+	constexpr int Hc = Config::kHc;
+	constexpr AttentionType Attention= Config::Attention;
+
+	
+	using SharedStorage = typename Config::SharedStorage;
+	extern __shared__ char shared_mem_raw[];
+	SharedStorage& shared_mem = *reinterpret_cast<SharedStorage*>(shared_mem_raw);
+	auto shared_memQ = shared_mem.Q.begin();
+	auto shared_memK = shared_mem.K.begin();
+	auto shared_memV = shared_mem.V.begin();
 
 
 	Tensor block_Q = make_tensor(Q, L_Q)(blockIdx.x, blockIdx.y, _, _); //(T,Hc)
@@ -82,14 +91,18 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 
 		ThrCopy thr_copy_K = copy_K.get_slice(threadIdx.x);
 		Tensor tKsK = thr_copy_K.partition_D(sK); //(CPY,CPY_T,CPY_Hc)
-		Tensor gK_first = local_tile(block_K, make_tile(Int<Bc>{}, Int<Hc>{}), make_coord(0, 0));
+		Tensor gK_first = local_tile(block_K, make_tile(Int<Bc>{}, Int<Hc>{}), make_coord(_0{}, _0{}));
 
 		//Kcopy 
 		Tensor tKgK_first = thr_copy_K.partition_S(gK_first); //(CPY,CPY_Bc,CPY_Hc)
+		
 
+		// fwd_thread_print_tensor_verbose(gK_first);
+		// fwd_thread_print_tensor_verbose(sK);
+		// fwd_thread_print_tensor_verbose(tKsK);
 		//issue q copy
 		copy(copy_Q, tQgQ, tQsQ);
-		// issue k copy
+		//issue k copy
 		copy(copy_K, tKgK_first, tKsK);
 		// async copy q and k
 		cp_async_fence();
@@ -140,8 +153,8 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			Tensor tXsK = s2r_thr_copy_K.partition_S(sK); //(CPY,MMA_T,MMA_Hc)
 			Tensor tXrK = s2r_thr_copy_K.retile_D(tSrK);
 
-			copy(s2r_atom_Q, tXsQ, tXrQ);
-			copy(s2r_atom_K, tXsK, tXrK);
+			copy(s2r_atom_Q, tXsQ(_,_,_0{}), tXrQ(_,_,_0{}));
+			copy(s2r_atom_K, tXsK(_,_,_0{}), tXrK(_,_,_0{}));
 
 			fwd_thread_print_tensor("tSrQ:", tSrQ);
 			fwd_thread_print_tensor("tSrK:", tSrK);
@@ -153,6 +166,10 @@ __global__ void AttentionForwardKernel(TQ const *Q, LayoutQ L_Q, TiledCopyQ copy
 			CUTE_UNROLL
 			for (int k = 0; k < size<2>(tSrQ); ++k) {
 				gemm(mmaS, tSrQ(_, _, k), tSrK(_, _, k), tSrS);
+				if( k < size<2>(tXsQ) - _1{}){
+					copy(s2r_atom_Q, tXsQ(_,_,k + _1{}), tXrQ(_,_, k + _1{}));
+					copy(s2r_atom_K, tXsK(_,_,k + _1{}), tXrK(_,_, k + _1{}));
+				}
 			}
 
 			fwd_thread_print_tensor("tSrS(gemm(Q,KT)):",tSrS);

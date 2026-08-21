@@ -2,12 +2,13 @@
 #include "flash_bwd_kernel.cuh"
 #include "cutlass/util/device_memory.h"
 #include "config.cuh"
+#include <stdexcept>
 
 namespace gpt2cuda {
 namespace kernel {
     
     template <class LQKV,class LO,class LLD>
-	struct Layouts{
+	struct BwdLayouts{
 		using LayoutQ = LQKV;
 		using LayoutK = LQKV;
 		using LayoutV = LQKV;
@@ -19,17 +20,18 @@ namespace kernel {
 		using LayoutdK	= LQKV;
 		using LayoutdV = LQKV;
 	};
-    template<AttentionType Attention ,int Hc, int Br = 64 , int Bc = 64 >
+    template<AttentionType Attention ,int Hc>
     void AttentionBackwardCUDA(float *d_inputs, float * D , float const *d_outputs, float const* outputs , float const *inputs,float const* logsumexp, int B, int T, int C3, int NH,cudaStream_t stream) {
 
-        assert(C3 % 3 == 0);
+        using Config = FlashBwdConfigFp32<Hc,Attention>;
         int C = C3 / 3;
-        assert(C % NH == 0);
-        assert(C / NH  == Hc);
-        assert(T / Br  > 0);
-        assert(T % Br == 0);
-        assert(T / Bc  > 0);
-        assert(T % Bc == 0);
+        if(!(C3 % 3 == 0 && C % NH == 0 && C / NH  == Hc)){
+            throw std::invalid_argument("input C is mismatch");
+
+        }
+        if(!(T / Config::kBr  > 0 && T % Config::kBr == 0 &&T / Config::kBc  > 0 &&T % Config::kBc == 0)){
+            throw std::invalid_argument("input T is mismatch");
+        }
         CUTE_STATIC_ASSERT_V(bool_constant<Hc == 32 || Hc == 64>(),"Hc is not supported");
 
 
@@ -41,29 +43,6 @@ namespace kernel {
         auto L_dO =L_O; 
         auto L_L = make_layout(make_shape(int{B}, int{NH}, int{T}), make_stride(int{T} * int{NH}, int{T} ,Int<1>{}));
         auto L_D = L_L; 
-
-        // decltype(L_Q) L_test;
-        // print_layout(L_test);
-        // TiledCopy copyQ = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cutlass::uint128_t>, float>{},
-        // 		Layout<Shape<_16, _8>, Stride<_8, _1>>{},
-        // 		Layout<Shape<_1, _4>>{});
-
-        // TiledCopy copyV = make_tiled_copy(Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, cute::half_t>{},
-        // 		Layout<Shape<_16, _8>, Stride<_8, _1>>{},
-        // 		Layout<Shape<_1, _4>>{});
-        
-
-
-        // {
-        // 	TiledMMA mmaS = make_tiled_mma(SM80_16x8x8_F32F16F16F32_TN{}, Layout<Shape<_1, _4, _1>>{}, Tile<Int<16>, Int<32>, _8>{});
-        // 	print_latex(mmaS);
-        // }
-
-        // {
-        // 	TiledMMA mmadV = make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{}, Layout<Shape<_1, _4, _1>>{}, Tile<Int<16>, Int<32>, _16>{});
-        // 	print_latex(mmadV);
-        // }
-
 
 
         dim3 dimGrid(B,NH);
@@ -78,12 +57,10 @@ namespace kernel {
 
 
         
-        using Config = FlashBwdConfigFp32<Hc,Attention>;
 
 
-
-        auto kernel_fptr = AttentionBackwardKernel<Config,Layouts<decltype(L_Q), decltype(L_O),decltype(L_L)>>;
-        // std::cout << "using smem size : " << Config::smem_size/ 1024 << "kb" << std::endl;
+        auto kernel_fptr = AttentionBackwardKernel<Config,BwdLayouts<decltype(L_Q), decltype(L_O),decltype(L_L)>>;
+        // std::cout << "bwd using smem size : " << Config::smem_size/ 1024 << "kb" << std::endl;
         CUDA_CHECK(cudaFuncSetAttribute(kernel_fptr, cudaFuncAttributeMaxDynamicSharedMemorySize, Config::smem_size));
         CUDA_CHECK(cudaFuncSetAttribute(kernel_fptr,cudaFuncAttributePreferredSharedMemoryCarveout, 100));
         kernel_fptr<<<dimGrid,Config::kthreads,Config::smem_size,stream>>>(

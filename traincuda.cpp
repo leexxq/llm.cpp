@@ -259,16 +259,26 @@ int main(int argc, char **argv) {
 		// gpt2.ZeroLoss(cur_stream);
 		// }
 		
-		if((step + 1) % args.log_iterations == 0 ){
+		// {
+		// 	end_train = std::chrono::high_resolution_clock::now();
+		// 	std::chrono::duration<double,std::milli> elapsed = end_train -start_train;
+		// 	float duration = elapsed.count();
+		// 	train_mean_loss = gpt2.GetLossSync(cur_stream) ;
+		// 	INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms", step + 1, train_mean_loss, duration);
+		// 	start_train = std::chrono::high_resolution_clock::now();
+		// 	gpt2.ZeroLoss(cur_stream);
+		// }
 
+		if( step == args.iterations - 1 || ((step + 1) % args.log_iterations == 0 )){
 			end_train = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double,std::milli> elapsed = end_train -start_train;
 			float duration = elapsed.count();
 			train_mean_loss = gpt2.GetLossSync(cur_stream) ;
-			train_mean_loss /= log_iterations;
+			int steps = (step + 1) % args.log_iterations;
+			steps = steps > 0 ? steps : args.log_iterations ;
+			train_mean_loss /= steps;
 			INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms", step + 1, train_mean_loss, duration);
 			start_train = std::chrono::high_resolution_clock::now();
-			train_mean_loss = 0;
 			gpt2.ZeroLoss(cur_stream);
 		}
 		

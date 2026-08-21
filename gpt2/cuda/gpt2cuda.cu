@@ -9,10 +9,11 @@
 #include "gpt2cuda.h"
 #include "adamw.h"
 #include "adamw.cuh"
-#include <algorithm>
+#include "nvtx3/nvtx3.hpp"
 #include <cassert>
 #include <iostream>
 #include <numeric>
+
 
 #include <fstream>
 #include <stdexcept>

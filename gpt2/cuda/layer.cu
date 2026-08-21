@@ -6,6 +6,7 @@
 #include "attention.cuh"
 #include <fstream>
 #include "devvector.cuh"
+#include <nvtx3/nvtx3.hpp>
 
 namespace gpt2cuda{
 
@@ -146,7 +147,9 @@ namespace gpt2cuda{
         params_bytes_ += dl_ln1_beta.size() * sizeof(float);
     }
 
+	static const nvtx3::registered_string tag_fwd{"layer forward"};
     void Layer::Forward(DevVecf& residual3 , const DevVecf &residual,cudaStream_t stream){
+        nvtx3::scoped_range nvtx_fwd{tag_fwd};
 
         BatchLayerNormForward(l_ln1_, l_ln1_means_, l_ln1_rstds_, residual, l_ln1_gamma,l_ln1_beta,B_,T_,C_,stream);
 
@@ -173,7 +176,9 @@ namespace gpt2cuda{
 
     }
 
+	static const nvtx3::registered_string tag_bwd{"layer backward"};
     void gpt2cuda::Layer::Backward(DevVecf& dresidual , const DevVecf&d_outputs, const DevVecf &residual,cudaStream_t stream){
+        nvtx3::scoped_range nvtx_bwd{tag_bwd};
         // std::ofstream cuda_log {"cuda_layer_log.txt" ,std::ios_base::out | std::ios_base::trunc};
         // cuda_log<< "-----------cuda layer backward-----------" << std::endl;
         // #define quick_debug_print(vec) cuda_log<< __LINE__ <<  " line  "#vec" :"  << vec[0] << "," << vec[1] << std::endl
