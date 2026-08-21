@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <ios>
 #include <memory>
 #include <stdexcept>
@@ -75,9 +76,10 @@ namespace gpt2cuda {
         // the weights (parameters) of the model, and their sizes
         size_t num_parameters;
         
+        
 
-        StdVec<DevVecf*> params_memory_;
-        StdVec<DevVecf*> grads_memory_;
+        StdVec<std::reference_wrapper<DevVecf>> params_memory_;
+        StdVec<std::reference_wrapper<DevVecf>> grads_memory_;
         // gradients of the weights
         // buffers for the AdamW optimizer
         StdVec<DevVecf> m_;

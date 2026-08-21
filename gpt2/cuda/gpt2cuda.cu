@@ -239,47 +239,47 @@ void GPT2::Init(size_t B,size_t T){
 	//params and grads data
 	//will be used for updates
 	{
-		params_memory_.emplace_back(&wte_);
-		grads_memory_.emplace_back(&dwte_);
+		params_memory_.emplace_back(std::ref(wte_));
+		grads_memory_.emplace_back(std::ref(dwte_));
 
-		params_memory_.emplace_back(&wpe_);
-		grads_memory_.emplace_back(&dwpe_);
+		params_memory_.emplace_back(std::ref(wpe_));
+		grads_memory_.emplace_back(std::ref(dwpe_));
 		for (auto &layer : layers_) {
-			params_memory_.emplace_back(&layer.l_ln1_gamma);
-			grads_memory_.emplace_back(&layer.dl_ln1_gamma);
-			params_memory_.emplace_back(&layer.l_ln1_beta);
-			grads_memory_.emplace_back(&layer.dl_ln1_beta);
+			params_memory_.emplace_back(std::ref(layer.l_ln1_gamma));
+			grads_memory_.emplace_back(std::ref(layer.dl_ln1_gamma));
+			params_memory_.emplace_back(std::ref(layer.l_ln1_beta));
+			grads_memory_.emplace_back(std::ref(layer.dl_ln1_beta));
 
-			params_memory_.emplace_back(&layer.l_qkv_weight);
-			grads_memory_.emplace_back(&layer.dl_qkv_weight);
-			params_memory_.emplace_back(&layer.l_qkv_bias);
-			grads_memory_.emplace_back(&layer.dl_qkv_bias);
+			params_memory_.emplace_back(std::ref(layer.l_qkv_weight));
+			grads_memory_.emplace_back(std::ref(layer.dl_qkv_weight));
+			params_memory_.emplace_back(std::ref(layer.l_qkv_bias));
+			grads_memory_.emplace_back(std::ref(layer.dl_qkv_bias));
 
-			params_memory_.emplace_back(&layer.l_attproj_weight);
-			grads_memory_.emplace_back(&layer.dl_attproj_weight);
-			params_memory_.emplace_back(&layer.l_attproj_bias);
-			grads_memory_.emplace_back(&layer.dl_attproj_bias);
+			params_memory_.emplace_back(std::ref(layer.l_attproj_weight));
+			grads_memory_.emplace_back(std::ref(layer.dl_attproj_weight));
+			params_memory_.emplace_back(std::ref(layer.l_attproj_bias));
+			grads_memory_.emplace_back(std::ref(layer.dl_attproj_bias));
 
-			params_memory_.emplace_back(&layer.l_ln2_gamma);
-			grads_memory_.emplace_back(&layer.dl_ln2_gamma);
-			params_memory_.emplace_back(&layer.l_ln2_beta);
-			grads_memory_.emplace_back(&layer.dl_ln2_beta);
+			params_memory_.emplace_back(std::ref(layer.l_ln2_gamma));
+			grads_memory_.emplace_back(std::ref(layer.dl_ln2_gamma));
+			params_memory_.emplace_back(std::ref(layer.l_ln2_beta));
+			grads_memory_.emplace_back(std::ref(layer.dl_ln2_beta));
 
-			params_memory_.emplace_back(&layer.l_fch_weight);
-			grads_memory_.emplace_back(&layer.dl_fch_weight);
-			params_memory_.emplace_back(&layer.l_fch_bias);
-			grads_memory_.emplace_back(&layer.dl_fch_bias);
+			params_memory_.emplace_back(std::ref(layer.l_fch_weight));
+			grads_memory_.emplace_back(std::ref(layer.dl_fch_weight));
+			params_memory_.emplace_back(std::ref(layer.l_fch_bias));
+			grads_memory_.emplace_back(std::ref(layer.dl_fch_bias));
 
-			params_memory_.emplace_back(&layer.l_fcproj_weight);
-			grads_memory_.emplace_back(&layer.dl_fcproj_weight);
-			params_memory_.emplace_back(&layer.l_fcproj_bias);
-			grads_memory_.emplace_back(&layer.dl_fcproj_bias);
+			params_memory_.emplace_back(std::ref(layer.l_fcproj_weight));
+			grads_memory_.emplace_back(std::ref(layer.dl_fcproj_weight));
+			params_memory_.emplace_back(std::ref(layer.l_fcproj_bias));
+			grads_memory_.emplace_back(std::ref(layer.dl_fcproj_bias));
 		}
         
-		params_memory_.emplace_back(&lnf_gamma_);
-		grads_memory_.emplace_back(&dlnf_gamma_);
-		params_memory_.emplace_back(&lnf_beta_);
-		grads_memory_.emplace_back(&dlnf_beta_);
+		params_memory_.emplace_back(std::ref(lnf_gamma_));
+		grads_memory_.emplace_back(std::ref(dlnf_gamma_));
+		params_memory_.emplace_back(std::ref(lnf_beta_));
+		grads_memory_.emplace_back(std::ref(dlnf_beta_));
 	}
 	//AdamW's m and v
 	{
@@ -288,8 +288,8 @@ void GPT2::Init(size_t B,size_t T){
 		m_ = StdVec<DevVecf>(params_size);
 		v_ = StdVec<DevVecf>(params_size);
 		for (int i = 0; i < params_size; ++i) {
-			m_[i] = makeDevVecfZero(params_memory_[i]->size());
-			v_[i] = makeDevVecfZero(params_memory_[i]->size());
+			m_[i] = makeDevVecfZero(params_memory_[i].get().size());
+			v_[i] = makeDevVecfZero(params_memory_[i].get().size());
             optimizer_bytes_ += m_[i].size() * sizeof(float);
             optimizer_bytes_ += v_[i].size() * sizeof(float);
 		}
@@ -432,8 +432,8 @@ void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, i
 	};
 
 	for (int i = 0; i < params_size; ++i) {
-		auto& data = *params_memory_[i];
-		auto& grad_data = *grads_memory_[i];
+		auto& data = params_memory_[i].get();
+		auto& grad_data = grads_memory_[i].get();
 		auto size = data.size();
 		auto grads_size = grad_data.size();
 		assert(size == grads_size && size == m_[i].size());
