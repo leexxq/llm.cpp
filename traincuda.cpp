@@ -114,7 +114,7 @@ void GenerateText(PinVeci& gen_tokens,Tokenizer& tokenizer,gpt2cuda::GPT2& gpt2,
 
 struct TrainArgs{
 	size_t B = 4;
-	size_t T = 64;
+	size_t T = 128;
 	size_t genT = 64;
 	size_t val_num_batches = 5;
 	size_t iterations = 40;
@@ -133,17 +133,24 @@ int main(int argc, char **argv) {
 	CLI::App app{"Train parameters"};
 	TrainArgs args;
 	app.add_option("-d,--datasets",args.datasets_dir,"datasets directory");
-
 	app.add_option("-b,--batch",args.B,"training batchs");
-	app.add_option("-t,--seq_length",args.T,"train tokens length");
-	app.add_option("--gen_token",args.genT,"generative text's tokens length");
+	app.add_option("-t,--seq_length",args.T,"train tokens length") ->check(
+		[](const std::string& t_str){
+			int t = std::stoi(t_str);
+			if(!(t / 128 > 0 && t % 128 == 0) ){
+				return std::string("set length must is mutliple number of 128");
+			}
+			return std::string("");
+		}
+	);
+	app.add_option("--gt",args.genT,"generative text's tokens length");
 	app.add_option("--val_sets_batch",args.val_num_batches,"validate sets's batch for test");
 	app.add_option("-i,--iteration",args.iterations,"train iterations number");
 	app.add_flag("--one_batch",args.one_batch,"repeat train one batch");
-	app.add_flag("--enable_gen",args.enable_gen,"start generate text after gen_iterations iterations");
-	app.add_flag("--enable_val",args.enable_val,"start test valiadate sets on ");
-	app.add_option("--gen_iterations",args.gen_iterations,"set generate iterations");
-	app.add_option("--val_iterations",args.val_iterations,"set test iterations");
+	app.add_flag("-g",args.enable_gen,"start generate text after gen_iterations iterations");
+	app.add_flag("-v",args.enable_val,"start test valiadate sets on ");
+	app.add_option("--gi",args.gen_iterations,"set generate iterations");
+	app.add_option("--vi",args.val_iterations,"set test iterations");
 
 	CLI11_PARSE(app,argc,argv);
 
