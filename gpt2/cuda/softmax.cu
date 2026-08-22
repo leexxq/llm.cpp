@@ -9,7 +9,7 @@
 namespace gpt2cuda {
 namespace kernel{
 
-    template<int threads=256>
+    template<int threads=128>
     __global__ void SoftmaxForwardKernel(float * outputs, float const * inputs , int ld , int length,int stride){
         const int bidx = blockIdx.x;
         const int warpidx = threadIdx.x / warpSize;
@@ -52,13 +52,13 @@ namespace kernel{
         //compute stride sum each thread;
         for(int i = 0 ; i < stride / warpSize ; ++i){
             const float val = inputs[row_offest + lane + i * warpSize];
-            sum += expf(val - maxval);
+            sum += __expf(val - maxval);
         }
 
         // residual
         if(residual_pred){
             const float val = inputs[row_offest + stride - 1 - lane];
-            sum += expf(val - maxval);
+            sum += __expf(val - maxval);
         }
         
         
@@ -70,18 +70,19 @@ namespace kernel{
         //     printf("lane : %d, warpidx : %d , {%f,%f}\n",lane,warpidx,maxval,sum);
         // }
 
+        float inv_sum = 1.f / sum;
 
         if(residual_pred){
             const int local_offest = stride - 1 - lane;
             const float val = inputs[row_offest + local_offest];
-            outputs[row_offest + local_offest] = expf(val - maxval)/sum;
+            outputs[row_offest + local_offest] = __expf(val - maxval) * inv_sum;
         }
 
         //load stride sum each thread;
         for(int i = 0 ; i < stride / warpSize ; ++i){
             const int local_offest = lane + i * warpSize;
             const float val = inputs[row_offest + local_offest];
-            outputs[row_offest + local_offest] = expf(val - maxval)/sum;
+            outputs[row_offest + local_offest] = __expf(val - maxval) * inv_sum;
         }
         // if(threadIdx.x ==0){
         //     printf("bidx: %d , lane : %d, warpidx : %d , row : %d \n",bidx,lane,warpidx,row_idx);
@@ -90,7 +91,7 @@ namespace kernel{
     }
 
 
-    template <int threads= 256>
+    template <int threads= 128>
     void SoftmaxForwardCUDA(float * outputs, float const *  inputs ,int ld , int length,int stride, cudaStream_t stream = 0){
 
         //compute one row by warps
