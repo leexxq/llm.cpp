@@ -1,4 +1,5 @@
 #include "cuda/devvector.cuh"
+#include "cuda/error.cuh"
 #include "cuda/pinvector.cuh"
 #include "cuda/softmax.cuh"
 #include "layernorm.cuh"
@@ -213,10 +214,10 @@ void GPT2::Init(size_t B,size_t T){
 
         logits_ = makeDevVecf(B*T*config_.padded_vocab_size);
         probs_ = makeDevVecf(B*T*config_.padded_vocab_size);
-        losses = makeDevVecfZero(B*T);
+        // losses = makeDevVecfZero(B*T);
         params_bytes_ += logits_.size() * sizeof(float);
         params_bytes_ += probs_.size() * sizeof(float);
-        params_bytes_ += losses.size() * sizeof(float);
+        // params_bytes_ += losses.size() * sizeof(float);
 
 
         dlnf_gamma_ = makeDevVecf(config_.channels);//(C)
@@ -298,12 +299,10 @@ void GPT2::Init(size_t B,size_t T){
 
 
 }
-void GPT2::Forward(Stream& s){
-    Forward(this->losses,s);
-}
 
 
-void GPT2::Forward(DevVecf& losses,Stream& s){
+void GPT2::ForwardNoLoss(Stream& s){
+
     auto L = config_.num_layers,B = B_,T = T_,C = config_.channels;
     auto NH = config_.num_heads,Vp = config_.padded_vocab_size,V = config_.vocab_size;
     auto MaxT = config_.max_seq_len;
@@ -324,9 +323,23 @@ void GPT2::Forward(DevVecf& losses,Stream& s){
     BatchMatmulNTForward(logits_, lnf_,wte_,DevVecf(), B,T,C,Vp,stream);
 
     BatchSoftmaxForward(probs_, logits_, B, T, V,Vp,stream);
+}
 
+void GPT2::Forward(Stream& s){
+    if(s.GetOnlyRefer()){
+        ForwardNoLoss(s);
+    }else{
+        throw std::runtime_error("stream is not only refer");
+    }
+}
+
+
+
+void GPT2::Forward(DevVecf& losses,Stream& s){
+    auto L = config_.num_layers,B = B_,T = T_,C = config_.channels, Vp = config_.padded_vocab_size,V = config_.vocab_size;
+    ForwardNoLoss(s);
     if(!s.is_only_refer) {
-        BatchCrossEntropyForward(losses,probs_,s.targets,B,T,Vp,stream);
+        BatchCrossEntropyForward(losses,probs_,s.targets,B,T,Vp,s.GetStream());
     }
 }
 
@@ -354,20 +367,7 @@ void GPT2::SetTrainData(Stream& s,const PinVeci& inputs, const PinVeci& targets)
 }
 
 
-float GPT2::GetLossSync(const Stream& s){
-    auto stream = s.GetStream();
-    PinVecf losses_h(losses.size());
-    losses.to(losses_h,stream);
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    float mean_loss = std::accumulate(losses_h.begin(),losses_h.end(),0.f) / (B_*T_);
-    return mean_loss;
-}
 
-
-void GPT2::ZeroLoss(Stream& s){
-    auto stream = s.GetStream();
-    losses.zero(stream);
-}
 
 // #define quick_debug_print(v,stream) \
 // {\
@@ -456,6 +456,41 @@ void GPT2::Update(float lr, float beta1, float beta2, float eps, float weight, i
 	// 	AdamW(data, grads_data, m_[i].data(), v_[i].data(), m_[i].size(), adamw_params);
 	// }
 
+}
+
+void GPT2::UpdateWithMulitStream(float lr, float beta1, float beta2, float eps, float weight, int t,cudaEvent_t when, StdVec<cudaStream_t>& worker_streams,StdVec<cudaEvent_t>& worker_dones){
+
+	size_t params_size = params_memory_.size();
+
+	AdamWConfig adamw_params{
+		lr,
+		beta1,
+		beta2,
+		eps,
+		weight,
+		t
+	};
+    if(worker_dones.size() != worker_streams.size()){
+        throw std::invalid_argument("worker_dones and worker_streams size mismatch");
+    }
+
+    for(auto stream: worker_streams){
+        CUDA_CHECK(cudaStreamWaitEvent(stream,when));
+    }
+
+	for (int i = 0; i < params_size; ++i) {
+        auto cur_stream = worker_streams[i%worker_streams.size()];
+		auto& data = params_memory_[i].get();
+		auto& grad_data = grads_memory_[i].get();
+		auto size = data.size();
+		auto grads_size = grad_data.size();
+		assert(size == grads_size && size == m_[i].size());
+        AdamW(data,grad_data,m_[i],v_[i],size,adamw_params,cur_stream);
+	}
+
+    for(int i = 0 ; i < worker_streams.size() ; ++i){
+        CUDA_CHECK(cudaEventRecord(worker_dones[i],worker_streams[i]));
+    }
 }
 
 void SetZero(PinVecf& v){

@@ -134,10 +134,11 @@ namespace gpt2cuda {
         std::filesystem::path checkpoint_path_;
     public:
         DevVecf probs_;//(B,T,Vp)
-        DevVecf losses; // (B,T)
+        // DevVecf losses; // (B,T)
 
     private:
         void Init(size_t B, size_t T);
+        void ForwardNoLoss(Stream& s);
     public:
         GPT2() : config_{ 1024, 50257, 50304, 12, 12, 768 }{}
         GPT2(GPT2Config config, size_t B, size_t T) : config_{ config }, B_(B), T_(T){Init(B, T);}
@@ -180,11 +181,7 @@ namespace gpt2cuda {
             return B_*T_*config_.padded_vocab_size;
         }
 
-        float GetLossSync(const Stream& stream);
-        void ZeroLoss(Stream& stream);
-        
-
-
+        void UpdateWithMulitStream(float lr, float beta1, float beta2, float eps, float weight, int t,cudaEvent_t when, StdVec<cudaStream_t>& worker_streams,StdVec<cudaEvent_t>& worker_dones);
         void Backward(Stream& stream);
         void ZeroGrad(Stream& stream);
         void Update(float lr, float beta1, float beta2, float eps, float weight, int t,Stream &stream);

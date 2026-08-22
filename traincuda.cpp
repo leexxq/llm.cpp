@@ -1,4 +1,5 @@
 #include "CLI/CLI.hpp"
+#include "cuda/devvector.cuh"
 #include "cuda/error.cuh"
 #include "cuda/pinvector.cuh"
 #include "gpt2/cuda/gpt2cuda.h"
@@ -13,9 +14,11 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <random>
 #include <ratio>
 #include <string>
+#include <type_traits>
 using namespace gpt2cuda;
 
 
@@ -91,7 +94,6 @@ void CUDART_CB on_token_ready(void * userData){
 
 template<class RandomEngine>
 void GenerateText(PinVeci& gen_tokens,Tokenizer& tokenizer,gpt2cuda::GPT2& gpt2,size_t genT,size_t B,size_t T,RandomEngine re,GPT2::Stream& stream){
-	INFO_PRINTLN("Generating:\n---");
 	PinVecf probs(gpt2.GetProbsSize());
 	StdVec<GenContext> contexts;
 	contexts.reserve(genT - 1);
@@ -112,6 +114,7 @@ void GenerateText(PinVeci& gen_tokens,Tokenizer& tokenizer,gpt2cuda::GPT2& gpt2,
 }
 
 
+
 struct TrainArgs{
 	size_t B = 4;
 	size_t T = 128;
@@ -127,6 +130,34 @@ struct TrainArgs{
 	std::string datasets_dir;
 };
 
+
+struct NextBatchContext{
+private:
+	NextBatchContext();
+public:
+	std::reference_wrapper<DataLoader> loader_ref;
+	std::reference_wrapper<PinVeci> inputs_ref;
+	std::reference_wrapper<PinVeci> targets_ref;
+
+	NextBatchContext(DataLoader& loader , PinVeci& inputs , PinVeci& targets):
+	loader_ref(std::ref(loader)),inputs_ref(std::ref(inputs)),targets_ref(std::ref(targets))
+	{
+	}
+
+};
+
+void CUDART_CB on_next_batch_start(void* userData){
+    NextBatchContext* ctx = reinterpret_cast<NextBatchContext*>(userData);
+	ctx->loader_ref.get().NextBatch(ctx->inputs_ref.get().begin(),ctx->targets_ref.get().begin());
+}
+
+
+
+
+void ZeroLoss(DevVecf& losses,GPT2::Stream& s){
+    auto stream = s.GetStream();
+    losses.zero(stream);
+}
 
 int main(int argc, char **argv) {
 
@@ -189,15 +220,13 @@ int main(int argc, char **argv) {
 	int log_iterations = 10;
 
 	
+	DevVecf losses_d(args.B*args.T);
+	PinVecf losses_h(args.B*args.T);
 	auto stream1 = gpt2.CreateStream();
 	auto stream2 = gpt2.CreateStream();
 
 
 
-	train_loader.NextBatch(inputs_stream1.begin(),targets_stream1.begin());
-	gpt2.SetTrainData(stream1,inputs_stream1, targets_stream1);
-	gpt2.ZeroLoss(stream1);
-	// GPUClock timer;
 	
 	
     auto start_train = std::chrono::high_resolution_clock::now();	
@@ -217,9 +246,30 @@ int main(int argc, char **argv) {
 
 	float train_mean_loss = 0;
 
-	cudaEvent_t stream_finished;
-	CUDA_CHECK(cudaEventCreate(&stream_finished));
 
+	cudaEvent_t val_finish_event;
+	CUDA_CHECK(cudaEventCreate(&val_finish_event));
+
+	cudaEvent_t gen_finish_event;
+	CUDA_CHECK(cudaEventCreate(&gen_finish_event));
+
+
+	cudaEvent_t update_end_event;
+	CUDA_CHECK(cudaEventCreate(&update_end_event));
+	
+	cudaEvent_t eval_start_event;
+	CUDA_CHECK(cudaEventCreate(&eval_start_event));
+	NextBatchContext context_stream1(train_loader,inputs_stream1,targets_stream1);
+	NextBatchContext context_stream2(train_loader,inputs_stream2,targets_stream2);
+
+	CUDA_CHECK(cudaLaunchHostFunc(stream1.GetStream(),on_next_batch_start,&context_stream1));
+	if(args.one_batch){
+		CUDA_CHECK(cudaLaunchHostFunc(stream2.GetStream(),on_next_batch_start,&context_stream2));
+	}
+	gpt2.SetTrainData(stream1,inputs_stream1, targets_stream1);
+
+	ZeroLoss(losses_d, stream1);
+	
 	for (int step = 0; step < args.iterations; ++step) {
 
 		
@@ -229,15 +279,11 @@ int main(int argc, char **argv) {
 		auto& next_inputs = step % 2== 0 ? inputs_stream2: inputs_stream1;
 		auto& next_targets = step % 2== 0 ? targets_stream2: targets_stream1;
 
-		// gpt2cuda::GPT2::Stream& cur_stream = stream1;
-
-
-		gpt2.SetTrainData(next_stream,next_inputs, next_targets);
-
+		auto& next_context = step % 2== 0 ? context_stream2 : context_stream1;
 
 		{
 		nvtx3::scoped_range nvtx{tag_fwd};
-		gpt2.Forward(cur_stream);
+		gpt2.Forward(losses_d,cur_stream);
 		}
 
 		{
@@ -256,37 +302,24 @@ int main(int argc, char **argv) {
 		gpt2.Update(1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1,cur_stream);
 		}
 
-		CUDA_CHECK(cudaEventRecord(stream_finished,cur_stream.GetStream()));
+		CUDA_CHECK(cudaEventRecord(update_end_event));
 
-
-
-		// {
-		// nvtx3::scoped_range nvtx{tag_0loss};
-		// // gpt2.ZeroLoss(next_stream);
-		// gpt2.ZeroLoss(cur_stream);
-		// }
-		
-		// {
-		// 	end_train = std::chrono::high_resolution_clock::now();
-		// 	std::chrono::duration<double,std::milli> elapsed = end_train -start_train;
-		// 	float duration = elapsed.count();
-		// 	train_mean_loss = gpt2.GetLossSync(cur_stream) ;
-		// 	INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms", step + 1, train_mean_loss, duration);
-		// 	start_train = std::chrono::high_resolution_clock::now();
-		// 	gpt2.ZeroLoss(cur_stream);
-		// }
 
 		if( step == args.iterations - 1 || ((step + 1) % args.log_iterations == 0 )){
 			end_train = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double,std::milli> elapsed = end_train -start_train;
 			float duration = elapsed.count();
-			train_mean_loss = gpt2.GetLossSync(cur_stream) ;
+
+			losses_d.to(losses_h,cur_stream.GetStream());
+			CUDA_CHECK(cudaEventRecord(eval_start_event));
+			CUDA_CHECK(cudaEventSynchronize(eval_start_event));
+			train_mean_loss = std::accumulate(losses_h.begin(),losses_h.end(),0.f) / (losses_h.size());
 			int steps = (step + 1) % args.log_iterations;
 			steps = steps > 0 ? steps : args.log_iterations ;
 			train_mean_loss /= steps;
 			INFO_PRINTLN("step {}, mean loss:{}, duration:{}ms", step + 1, train_mean_loss, duration);
 			start_train = std::chrono::high_resolution_clock::now();
-			gpt2.ZeroLoss(cur_stream);
+			ZeroLoss(losses_d,next_stream);
 		}
 		
 
@@ -295,8 +328,6 @@ int main(int argc, char **argv) {
 			start_val = std::chrono::high_resolution_clock::now();
 			float val_loss = 0.0f;
 			{
-				cudaEvent_t val_finish_event;
-				CUDA_CHECK(cudaEventCreate(&val_finish_event));
 				val_loader.Reset();
 				DevVecf losses(args.B*args.T);
 				PinVeci val_inputs(args.B * args.T);
@@ -324,20 +355,25 @@ int main(int argc, char **argv) {
 		}
 
 		if(!args.one_batch){
-			train_loader.NextBatch(next_inputs.begin(),next_targets.begin());
+			CUDA_CHECK(cudaLaunchHostFunc(next_stream.GetStream(),on_next_batch_start,&next_context));
 		}		
 
-		CUDA_CHECK(cudaEventSynchronize(stream_finished));
+		gpt2.SetTrainData(next_stream,next_inputs, next_targets);
+
+		// wait;
+
+		CUDA_CHECK(cudaStreamWaitEvent(next_stream.GetStream(),update_end_event));
+		
+
 
 		if (args.enable_gen&&(step+1) % args.gen_iterations == 0) {
 			start_gen = std::chrono::high_resolution_clock::now();
 			cur_stream.SetOnlyRefer(true);
 			{
 				gen_tokens.assign(args.B*args.T,tokenizer.eot_token);
-				cudaEvent_t gen_finish_event;
-				CUDA_CHECK(cudaEventCreate(&gen_finish_event));
 				gpt2.SetTrainData(cur_stream,gen_tokens);
 
+				INFO_PRINTLN("Generating:\n---");
 				GenerateText(gen_tokens, tokenizer, gpt2, args.genT, args.B, args.T, shuffle_rng, cur_stream);
 				CUDA_CHECK(cudaEventRecord(gen_finish_event));
 				CUDA_CHECK(cudaEventSynchronize(gen_finish_event));
@@ -354,7 +390,9 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	CUDA_CHECK(cudaEventDestroy(stream_finished));
-
+	CUDA_CHECK(cudaEventDestroy(val_finish_event));
+	CUDA_CHECK(cudaEventDestroy(gen_finish_event));
+	CUDA_CHECK(cudaEventDestroy(eval_start_event));
+	CUDA_CHECK(cudaEventDestroy(update_end_event));
 	return 0;
 }

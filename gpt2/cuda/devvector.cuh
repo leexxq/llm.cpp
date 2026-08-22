@@ -82,16 +82,16 @@ namespace gpt2cuda {
         }
 
         template<class Allocator>
-        void to(std::vector<T,Allocator>& other){
+        void to(std::vector<T,Allocator>& other)const{
             data_.copy_to_host(other.data());
         }
         
         template<class Allocator>
-        void to(std::vector<T,Allocator>& other,cudaStream_t stream){
+        void to(std::vector<T,Allocator>& other,cudaStream_t stream)const{
             to(other.data(),stream);
         }
 
-        void to(T* dst_data,cudaStream_t stream = 0){
+        void to(T* dst_data,cudaStream_t stream = 0)const {
             CUDA_CHECK(cudaMemcpyAsync(dst_data,this->data(),size()*sizeof(T),cudaMemcpyDeviceToHost,stream));
         }
         void from(const T* src_data,cudaStream_t stream = 0){

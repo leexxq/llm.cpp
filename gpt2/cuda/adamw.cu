@@ -2,13 +2,12 @@
 #include "error.cuh"
 #include "cutlass/util/device_memory.h"
 #include <cstdlib>
-
 namespace gpt2cuda{
 namespace kernel {
 
 __global__ void AdamWKernel(
 float* data ,float const* grad_data, float *m ,float * v ,  std::size_t size, 
-        float lr,float beta1,float beta2,float eps,float weight_decay,int t
+        float lr,float beta1,float beta2,float eps,float weight_decay,float rpow2_beta1_t,float rpow2_beta2_t
 ){
     const int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -19,20 +18,26 @@ float* data ,float const* grad_data, float *m ,float * v ,  std::size_t size,
         float m_ = beta1 * m[idx] + (1.0f - beta1) * grad;
         float v_ = beta2 * v[idx] + (1.0f - beta2) * grad * grad;
         
-        float m_hat = m_ / (1.0f - powf(beta1, t));
-        float v_hat = v_ / (1.0f - powf(beta2, t));
+
+        float m_hat = m_ * rpow2_beta1_t;
+        float v_hat = v_ * rpow2_beta2_t;
 
         m[idx] = m_;
         v[idx] = v_;
 
+        
+
         data[idx] -= lr * (m_hat / (sqrtf(v_hat) + eps) + weight_decay * param);
+        // data[idx] -= lr * (m_hat * __frsqrt_rn(v_hat + eps) + weight_decay * param);
     }
 }
 
 template<int threads=256>
 void AdamWCUDA(float* data ,float const* grad_data, float *m ,float * v ,  std::size_t size, 
     float lr,float beta1,float beta2,float eps,float weight_decay,int t,cudaStream_t stream){
-        AdamWKernel<<<(size + threads - 1) / threads,threads,0,stream>>>(data, grad_data, m, v, size, lr, beta1, beta2, eps, weight_decay, t);
+        auto beta1_t = 1.0f/ ( 1.0f - std::pow(beta1,t));
+        auto beta2_t = 1.0f / (1.0f - std::pow(beta2,t));
+        AdamWKernel<<<(size + threads - 1) / threads,threads,0,stream>>>(data, grad_data, m, v, size, lr, beta1, beta2, eps, weight_decay, beta1_t,beta2_t);
         CUDA_CHECK_LAST();
 }
 
