@@ -327,7 +327,7 @@ TEST(CudaAttention,flash_attention_f32_forward3){
 	constexpr size_t B = 1;
 	constexpr size_t T = 128;
     constexpr size_t NH = 1 ;
-    constexpr size_t C = 32 * NH;
+    constexpr size_t C = 64 * NH;
     constexpr size_t C3 = 3 * C;
 
 	basic_attention_forward_test(B, T, NH, C);

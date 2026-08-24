@@ -1,5 +1,6 @@
 #pragma once
 #include "cuda/error.cuh"
+#include "cute/util/print_latex.hpp"
 #include "flash_fwd_kernel.cuh"
 #include "config.cuh"
 #include <stdexcept>
@@ -51,6 +52,9 @@ namespace kernel {
         // mma base
         // print_latex(make_tiled_mma(SM80_16x8x16_F32F16F16F32_TN{},Layout<Shape<_1,_1,_1>>{},Tile<_16,_8,_16>{}));
 
+        // print_latex(typename Config::SQ_Swz{});
+        // print_latex(typename Config::SK_Swz{});
+        // print_latex(typename Config::SV_Swz{});
         
 
         auto kernel_fptr = AttentionForwardKernel<Config,FwdLayouts<decltype(L_Q), decltype(L_O), decltype(L_logsumexp)>>;

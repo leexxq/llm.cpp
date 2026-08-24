@@ -1,5 +1,6 @@
 #include <cute/tensor.hpp>
 #include "config.cuh"
+#include "cute/stride.hpp"
 #include "online_softmax.cuh"
 #include "log.cuh"
 #include "utils.cuh"
@@ -76,12 +77,14 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 
 		
 		//Qmem
-		Layout sQ_layout = make_layout(make_shape(Int<Br>{}, Int<Hc>{}), LayoutRight{});
-		Tensor sQ = make_tensor(make_smem_ptr(shared_memQ), sQ_layout); //(T,Hc,k)
+		// Layout sQ_layout = make_layout(make_shape(Int<Br>{}, Int<Hc>{}), LayoutRight{});
+		// Tensor sQ = make_tensor(make_smem_ptr(shared_memQ), sQ_layout); //(T,Hc,k)
+		Tensor sQ = make_tensor(make_smem_ptr(shared_memQ), typename Config::SQ_Swz{}); //(T,Hc,k)
 
 		//Kmem
-		Layout sK_layout = make_layout(make_shape(Int<Bc>{}, Int<Hc>{}), LayoutRight{});
-		Tensor sK = make_tensor(make_smem_ptr(shared_memK), sK_layout); //(T,Hc,k)
+		// Layout sK_layout = make_layout(make_shape(Int<Bc>{}, Int<Hc>{}), LayoutRight{});
+		// Tensor sK = make_tensor(make_smem_ptr(shared_memK), sK_layout); //(T,Hc,k)
+		Tensor sK = make_tensor(make_smem_ptr(shared_memK), typename Config::SK_Swz{}); //(T,Hc,k)
 
 		//Qcopy
 		ThrCopy thr_copy_Q = copy_Q.get_slice(threadIdx.x);
@@ -139,8 +142,8 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 			// Copy_Atom<UniversalCopy<float>, float> s2r_atom_Q;
 			// Copy_Atom<UniversalCopy<float>, float> s2r_atom_K;
 
-			Copy_Atom<SM75_U32x4_LDSM_N, float> s2r_atom_Q;
-			Copy_Atom<SM75_U32x4_LDSM_N, float> s2r_atom_K;
+			Copy_Atom<SM75_U32x4_LDSM_N, typename Config::TSharedQ> s2r_atom_Q;
+			Copy_Atom<SM75_U32x4_LDSM_N, typename Config::TSharedK> s2r_atom_K;
 			TiledCopy s2r_copy_Q = make_tiled_copy_A(s2r_atom_Q, mmaS);
 			ThrCopy s2r_thr_copy_Q = s2r_copy_Q.get_slice(threadIdx.x);
 
@@ -216,9 +219,9 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 			//now we get per row from formula softmax(QK^T)
 
 			// V smem (swizzle)
-			Layout sV_layout = make_layout(make_shape(Int<Bc>{}, Int<Hc>{}), LayoutRight{});
-			// Tensor sV_swz = make_tensor(make_smem_ptr(shared_memV),composition(Swizzle<5,0,5>{},sV_layout));
-			Tensor sV = make_tensor(make_smem_ptr(shared_memV), sV_layout);
+			// Layout sV_layout = make_layout(make_shape(Int<Bc>{}, Int<Hc>{}), LayoutRight{});
+			// Tensor sV = make_tensor(make_smem_ptr(shared_memV), sV_layout);
+			Tensor sV = make_tensor(make_smem_ptr(shared_memV), typename Config::SV_Swz{});
 			ThrCopy thr_copy_V = copy_V.get_slice(threadIdx.x);
 
 			Tensor tVgV = thr_copy_V.partition_S(gV);
@@ -226,7 +229,7 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 			// copy global to register and convert fp32 to fp16.
 			// finally, copy to smem
 			{
-				Tensor tVrV = make_fragment_like<float>(tVgV);
+				Tensor tVrV = make_fragment_like<typename Config::TV>(tVgV);
 				Tensor tXrV = thr_copy_V.retile_D(tVrV);
 				copy(copy_V, tVgV, tXrV);
 
@@ -236,7 +239,7 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 
 
 				//convert to half type
-				Tensor tVrV_fp16 = convert_type<cute::half_t>(tVrV);
+				Tensor tVrV_fp16 = convert_type<typename Config::TSharedV>(tVrV);
 
 				fwd_thread_print_tensor("tVrV fp16:",tVrV_fp16);
 
@@ -249,26 +252,8 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 
 			fwd_thread_print_tensor("sV:",sV);
 
-			Layout sVT_layout = make_layout(make_shape(Int<Hc>{}, Int<Bc>{}), LayoutLeft{});
-			Tensor sVT = make_tensor(make_smem_ptr(shared_memV), sVT_layout);
 
-			Copy_Atom<SM75_U16x8_LDSM_T, cute::half_t> s2r_atom_V;
-
-			TiledCopy s2r_copy_VT = make_tiled_copy_B(s2r_atom_V, mmaO);
-			ThrCopy s2r_thr_copy_VT = s2r_copy_VT.get_slice(threadIdx.x);
-
-
-			Tensor tVrVT = thr_mmaO.partition_fragment_B(sVT); // (MMA, MMA_Bc,MMA_Hc)
-
-			Tensor tXsVT = s2r_thr_copy_VT.partition_S(sVT);
-			Tensor tXrVT = s2r_thr_copy_VT.retile_D(tVrVT);
-
-			copy(s2r_atom_V, tXsVT, tXrVT);
-
-			fwd_thread_print_tensor("sVT:",sVT);
-			fwd_thread_print_tensor("tVrVT:",tVrVT);
-
-			Tensor tSrS_fp16 = convert_type<cute::half_t>(tSrS);
+			Tensor tSrS_fp16 = convert_type<typename Config::TSharedV>(tSrS);
 
 			fwd_thread_print_tensor("tSrS:",tSrS);
 			fwd_thread_print_tensor("tSrS_fp16",tSrS);
@@ -292,11 +277,36 @@ __global__ void AttentionForwardKernel(typename Config::TQ const *Q, typename La
 			// __syncthreads();
 
 
+			// Layout sVT_layout = make_layout(make_shape(Int<Hc>{}, Int<Bc>{}), LayoutLeft{});
+			// Tensor sVT = make_tensor(make_smem_ptr(shared_memV), sVT_layout);
+
+			auto sVT_layout = composition(typename Config::SV_Swz{},make_layout(make_shape(Int<Hc>{}, Int<Bc>{}), LayoutRight{}));
+			Tensor sVT = make_tensor(make_smem_ptr(shared_memV), sVT_layout);
+
+			Copy_Atom<SM75_U16x8_LDSM_T, typename Config::TSharedV> s2r_atom_V;
+
+			TiledCopy s2r_copy_VT = make_tiled_copy_B(s2r_atom_V, mmaO);
+			ThrCopy s2r_thr_copy_VT = s2r_copy_VT.get_slice(threadIdx.x);
+
+
+			Tensor tVrVT = thr_mmaO.partition_fragment_B(sVT); // (MMA, MMA_Bc,MMA_Hc)
+
+			Tensor tXsVT = s2r_thr_copy_VT.partition_S(sVT);
+			Tensor tXrVT = s2r_thr_copy_VT.retile_D(tVrVT);
+
+			copy(s2r_atom_V, tXsVT(_,_,_0{}), tXrVT(_,_,_0{}));
+
+			fwd_thread_print_tensor("sVT:",sVT);
+			fwd_thread_print_tensor("tVrVT:",tVrVT);
+
 			// we will calculate SV
 			// due O = SV
 			CUTE_UNROLL
 			for (int k = 0; k < size<2>(tVrVT); ++k) {
 				gemm(mmaO, tSrS_fp16_2_A_frag(_, _, k), tVrVT(_, _, k), tOrO);
+				if(k < size<2>(tXrVT) - 1){
+					copy(s2r_atom_V, tXsVT(_,_,k + _1{}), tXrVT(_,_, k + _1{}));
+				}
 			}
 
 

@@ -1,4 +1,6 @@
 #pragma once
+#include "cute/layout_composed.hpp"
+#include "cute/swizzle.hpp"
 #include <cute/tensor.hpp>
 using namespace cute;
 enum class AttentionType{
@@ -97,15 +99,13 @@ struct FlashBwdConfigFp32{
 
 template <
 int Br,int Bc,int Hc,
-class TQ ,class TK ,class TV,
-class TMMA = cute::half_t
->
+class TQ ,class TK ,class TV>
 								
 struct FlashFwdSharedStorage
 {
 	cute::ArrayEngine<TQ, Int<Br>{} * Int<Hc>{}> Q;
 	cute::ArrayEngine<TK, Int<Bc>{} * Int<Hc>{}> K;
-	cute::ArrayEngine<TMMA, Int<Bc>{} * Int<Hc>{}> V;
+	cute::ArrayEngine<TV, Int<Bc>{} * Int<Hc>{}> V;
 };
 
 template <int HeadDim,AttentionType Att>
@@ -120,8 +120,40 @@ struct FlashFwdConfigFp32{
 	static constexpr int kHc = HeadDim;
 
 	
-	// using SharedStorage = FlashBwdSharedStorage<kBr,kBc,kHc,float,float,float,float,float,cute::half_t>;
-	using SharedStorage = FlashFwdSharedStorage<kBr,kBc,kHc,float,float,cute::bfloat16_t>;
+	using TSharedQ = float;
+	using TSharedK = float;
+	using TSharedV = cute::half_t;
+	using SharedStorage = FlashFwdSharedStorage<kBr,kBc,kHc,TSharedQ,TSharedK,TSharedV>;
+
+	using SwzV_64Atom = decltype(
+		composition(Swizzle<3,3,3>{},
+					Layout<Shape <_8,Shape <_8, _8>>,
+					Stride<_8,Stride<_1,_64>>>{}));
+
+	using SwzV_32Atom= decltype(
+		composition(Swizzle<2,3,3>{},
+					Layout<Shape <_8,Shape <_8, _4>>,
+					Stride<_8,Stride<_1,_64>>>{}));
+
+	
+	using SwzV_Atom = std::conditional_t<kHc == 32 , SwzV_32Atom,SwzV_64Atom>;
+
+ 
+
+	// using SV_Swz_eq32 = decltype(tile_to_shape(SwzV_32Atom{},make_shape(Int<kBc>{},Int<kHc>{})));
+
+	// using SV_Swz_gr32 = decltype(tile_to_shape(SwzV_Atom{},make_shape(Int<kBc>{},Int<kHc>{})));
+
+	using SV_Swz = decltype(tile_to_shape(SwzV_Atom{},make_shape(Int<kBc>{},Int<kHc>{})));
+
+	using SwzQK_Atom = decltype(
+		composition(Swizzle<3,2,3>{},
+					Layout<Shape <_4,Shape <_4, _8>>,
+					Stride<_4,Stride<_1,_16>>>{}));
+
+	using SQ_Swz = decltype(tile_to_shape(SwzQK_Atom{},make_shape(Int<kBr>{},Int<kHc>{})));
+	using SK_Swz = decltype(tile_to_shape(SwzQK_Atom{},make_shape(Int<kBc>{},Int<kHc>{})));
+
 
 	static constexpr int smem_size = int(sizeof(SharedStorage)); 
 
@@ -152,21 +184,6 @@ struct FlashFwdConfigFp32{
 	using UniversalTiledCopy = decltype(make_tiled_copy(VecCpyAtom{},
 		CPThrLayout{},
 		CPValLayout{}));
-        // TiledCopy copyQ = make_tiled_copy(, float>{},
-        //         {});
-
-        // TiledCopy copyK = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cutlass::uint128_t>, float>{},
-        //         Layout<Shape<_16, _8>, Stride<_8, _1>>{},
-        //         Layout<Shape<_1, _4>>{});
-
-        // TiledCopy copyV = make_tiled_copy(Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, cute::half_t>{},
-        //         Layout<Shape<_16, _8>, Stride<_8, _1>>{},
-        //         Layout<Shape<_1, _4>>{});
-
-        // TiledCopy copyO = make_tiled_copy(Copy_Atom<UniversalCopy<cute::uint128_t>, float>{},
-        //         Layout<Shape<_16, _8>, Stride<_8, _1>>{},
-        //         Layout<Shape<_1, _4>>{});
-
 
 	using CopyQ = decltype(make_tiled_copy(AsyncVecCPAtom{},CPThrLayout{},CPValLayout{}));
 	using CopyK = CopyQ;
