@@ -1,3 +1,4 @@
+#include "cuda/devvector.cuh"
 #include "kernel/gemm_fusion/gemm_softmax/config.cuh"
 #include "matmul_softmax.cuh"
 
@@ -5,7 +6,7 @@ namespace gpt2cuda{
 namespace kernel{
 
     template < class LayoutInput = cutlass::layout::RowMajor , class LayoutWeight = cutlass::layout::RowMajor> 
-    void MatmulSoftmaxCUDA(float * outputs_d, float * softmax_norms ,float * softmax_sums , float const *  inputs_d , float const * weight_d, float const * bias_d , int B, int T,int  C,int Vp,int V, cudaStream_t stream = 0){
+    void MatmulSoftmaxCUDA(float * soft_outputs , float * outputs_d, float * softmax_norms ,float * softmax_sums , float const *  inputs_d , float const * weight_d, float const * bias_d , int B, int T,int  C,int Vp,int V, cudaStream_t stream = 0){
         using Config = MatmulSoftmaxConfig<LayoutInput,LayoutWeight>;
         cutlass::gemm::GemmCoord problem{T,V,C};
         int batch_count = B;
@@ -64,7 +65,7 @@ namespace kernel{
             },
             {softmax_norms, ldn},
             {softmax_sums, lds},
-            {outputs_d, ldd},
+            {soft_outputs, ldd},
             total_elements_A_per_batch,
             total_elements_B_per_batch,
             total_elements_C_per_batch,
@@ -98,26 +99,28 @@ namespace kernel{
 }
 
     // N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
-    void BatchMatmulNTSoftmaxForward(DevVecf& outputs,DevVecf& workspace, const DevVecf& inputs , const DevVecf& weight, const DevVecf& bias , int B, int T,int C , int  Vp,int V,cudaStream_t stream){
+    void BatchMatmulNTSoftmaxForward(DevVecf soft_outputs , DevVecf& outputs,DevVecf& workspace, const DevVecf& inputs , const DevVecf& weight, const DevVecf& bias , int B, int T,int C , int  Vp,int V,cudaStream_t stream){
         auto workspace_size = GetMatmulSoftmaxWorkSpaceSize(B,T,V);
         float * softmax_norms = workspace.data();
         float * softmax_sums = workspace.data() + workspace_size / 2;
         if(bias.size() > 0){
-            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), softmax_norms,softmax_sums,inputs.data(), weight.data(), bias.data(), B, T, C,Vp,V,stream);
+            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(soft_outputs.data(),outputs.data(), softmax_norms,softmax_sums,inputs.data(), weight.data(), bias.data(), B, T, C,Vp,V,stream);
         }else{
-            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs.data(), softmax_norms,softmax_sums,inputs.data(), weight.data(), bias.data(), B, T, C,Vp,V,stream);
+            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(soft_outputs.data() , outputs.data(), softmax_norms,softmax_sums,inputs.data(), weight.data(), bias.data(), B, T, C,Vp,V,stream);
         }
     }
     // N is row-major ,T is column-major, Return is row-major , C is considered intermediate dimension of matrix multiplication
-    void BatchMatmulNTSoftmaxForward(float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T, int C , int  Vp,int V){
+    void BatchMatmulNTSoftmaxForward(float* soft_outputs , float * outputs,float const *  inputs , float const * weight, float const * bias , int B, int T, int C , int  Vp,int V){
         using alloctor = cutlass::device_memory::allocation<float>;
         alloctor  inputs_d(B*T *C);
         alloctor  weight_d(C*Vp);
         alloctor  outputs_d(B*T *Vp);
+        alloctor  soft_outputs_d(B*T *Vp);
         alloctor  bias_d;
         auto workspace_size = GetMatmulSoftmaxWorkSpaceSize(B,T,V);
         alloctor  softmax_norms_d(workspace_size/2);
         alloctor  softmax_sums_d(workspace_size/2);
+        
         inputs_d.copy_from_host(inputs);
         weight_d.copy_from_host(weight);
 
@@ -125,12 +128,12 @@ namespace kernel{
         if(bias != nullptr){
             bias_d = alloctor(V);
             bias_d.copy_from_host(bias);
-            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs_d.get(),softmax_norms_d.get(),softmax_sums_d.get() ,inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Vp,V);
+            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(soft_outputs_d.get(), outputs_d.get(),softmax_norms_d.get(),softmax_sums_d.get() ,inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Vp,V);
         }else{
-            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(outputs_d.get(),softmax_norms_d.get(),softmax_sums_d.get() ,inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Vp,V);
+            kernel::MatmulSoftmaxCUDA<cutlass::layout::RowMajor,cutlass::layout::ColumnMajor>(soft_outputs_d.get(),outputs_d.get(),softmax_norms_d.get(),softmax_sums_d.get() ,inputs_d.get(), weight_d.get(), bias_d.get(), B, T, C, Vp,V);
         }
         outputs_d.copy_to_host(outputs);
-
+        soft_outputs_d.copy_to_host(soft_outputs);
     }
     std::size_t GetMatmulSoftmaxWorkSpaceSize(int B,int T, int V){
         using Config = kernel::MatmulSoftmaxConfig<>;

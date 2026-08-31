@@ -308,11 +308,11 @@ TEST(CudaMatMul,fused_gelu_forward1){
 
 
 TEST(CudaMatMul, fused_softmax_forward1){
-	constexpr int B = 2;
-	constexpr int T = 64;
-	constexpr int C = 2048;
-	constexpr int V =  2048; 
-	constexpr int Vp = 2048;
+	constexpr int B = 4;
+	constexpr int T = 512;
+	constexpr int C = 768;
+	constexpr int V =  50257; 
+	constexpr int Vp = 50304;
 
 	auto matmul = MatMul(C,Vp);
 
@@ -340,10 +340,11 @@ TEST(CudaMatMul, fused_softmax_forward1){
 	}
 
     StdVec<float> outputs_vec(B*T*Vp);
+    StdVec<float> soft_outputs_vec(B*T*Vp);
 	
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-		gpt2cuda::BatchMatmulNTSoftmaxForward(outputs_vec.data(),inputs_vec.data(),matmul.weight.data(),matmul.bias.data(),B,T,C,Vp,V);
+		gpt2cuda::BatchMatmulNTSoftmaxForward(soft_outputs_vec.data(), outputs_vec.data(),inputs_vec.data(),matmul.weight.data(),matmul.bias.data(),B,T,C,Vp,V);
 		auto end = std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "[gpu]elapsed:" << elapsed << "ms"<<std::endl;
@@ -351,14 +352,14 @@ TEST(CudaMatMul, fused_softmax_forward1){
 	std::fstream log{"matmul_softamx_forward_log" , std::ios::out | std::ios::trunc};
 
 	for(int b = 0 ; b < B ; ++ b){
-		Eigen::Map<MatfRow> map_output_vec(outputs_vec.data() + b * T * Vp,T,Vp);
-			EXPECT_TRUE(map_output_vec.block(0,0,T,V).isApprox(outputs_res[b], 0.1f))
-			 << "gpu" << std::endl << map_output_vec.block<9,9>(T - 10, V - 10) << std::endl 
+		Eigen::Map<MatfRow> map_soft_output_vec(soft_outputs_vec.data() + b * T * Vp,T,Vp);
+			EXPECT_TRUE(map_soft_output_vec.block(0,0,T,V).isApprox(outputs_res[b], 0.1f))
+			 << "gpu" << std::endl << map_soft_output_vec.block<9,9>(T - 10, V - 10) << std::endl 
 			<< "cpu" << std::endl <<  outputs_res[b].block<9,9> (T - 10, V - 10) << std::endl;
 			//  << "gpu" << std::endl << map_output_vec.block<9,9>(T - 10, V - 10) << std::endl 
 			// << "cpu" << std::endl <<  logits[b].block<9,9> (T - 10, V - 10) << std::endl;
 		
-		std::cout << map_output_vec.block(0,0,T,V).rowwise().sum()<< std::endl;
+		// std::cout << map_soft_output_vec.block(0,0,T,V).rowwise().sum()<< std::endl;
 		// std::cout << outputs_res[b].maxCoeff() << std::endl;
 
 		// log << "-------" << B << "-------" << std::endl;
